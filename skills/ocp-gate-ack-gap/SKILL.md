@@ -8,6 +8,7 @@ description: >
 compatibility:
   required_tools:
     - python3
+    - jq (for JSON processing)
     - PyYAML (for YAML processing)
 ---
 
@@ -26,50 +27,60 @@ Verify that admin gates from the baseline OpenShift version are properly acknowl
 ## Workflow
 
 1. Parse baseline and target versions (default: auto-detect latest stable → latest candidate)
-2. Fetch admin gate ConfigMap from cluster-version-operator repo (baseline version)
-3. Check if admin gates exist in the ConfigMap's `data` field
-4. Fetch admin acknowledgment ConfigMap from managed-cluster-config repo (target version)
-5. Validate acknowledgment structure based on gate presence:
+2. Detect upgrade type (z-stream vs cross-minor):
+   - **Z-stream** (e.g., 4.19.30 → 4.19.31): Validates gates from 4.19 against acks in 4.20 (next minor)
+   - **Cross-minor** (e.g., 4.19 → 4.20): Validates gates from 4.19 against acks in 4.20
+3. Fetch admin gate ConfigMap from cluster-version-operator repo (baseline version)
+4. Check if admin gates exist in the ConfigMap's `data` field
+5. Fetch admin acknowledgment ConfigMap from managed-cluster-config repo (ack check version)
+6. Validate acknowledgment structure based on gate presence:
    - **If gates exist**: Both `config.yaml` AND `admin-ack.yaml` MUST be present, all gates must be acknowledged
    - **If no gates**: Both files MUST be absent (directory should not exist)
-6. Report upgrade readiness status and generate detailed reports
+7. Report upgrade readiness status and generate detailed reports
 
 ## Script Usage
 
-**Auto-detect versions (recommended):**
+**Single version (recommended):**
 ```bash
-# Compares latest stable → latest candidate
-python3 ./scripts/gap-ocp-gate-ack.py
+# Auto-resolves baseline and target
+python3 ./scripts/gap-ocp-gate-ack.py --version 4.22
+
+# Using environment variable
+OPENSHIFT_VERSION=4.22 python3 ./scripts/gap-ocp-gate-ack.py
+
+# 5.x versions (special baseline mapping)
+python3 ./scripts/gap-ocp-gate-ack.py --version 5.0   # 4.22 → 5.0
+OPENSHIFT_VERSION=5.1 python3 ./scripts/gap-ocp-gate-ack.py  # 4.23 → 5.1
 
 # With verbose output
-python3 ./scripts/gap-ocp-gate-ack.py --verbose
+python3 ./scripts/gap-ocp-gate-ack.py --version 4.22 --verbose
+
+# Dry-run mode
+python3 ./scripts/gap-ocp-gate-ack.py --version 4.22 --dry-run
 
 # Custom report directory
-python3 ./scripts/gap-ocp-gate-ack.py --report-dir /custom/reports
+python3 ./scripts/gap-ocp-gate-ack.py --version 4.22 --report-dir /custom/reports
 ```
 
-**Explicit versions:**
+**Explicit baseline and target:**
 ```bash
 python3 ./scripts/gap-ocp-gate-ack.py \
   --baseline <version> \
   --target <version> \
   [--report-dir <path>] \
-  [--verbose]
+  [--verbose] \
+  [--dry-run]
+
+# Examples (uses minor versions: 4.21, 4.22)
+python3 ./scripts/gap-ocp-gate-ack.py --baseline 4.21 --target 4.22
+python3 ./scripts/gap-ocp-gate-ack.py --baseline 4.21.7 --target 4.22.0 --verbose
+python3 ./scripts/gap-ocp-gate-ack.py --baseline 4.21 --target 4.22 --dry-run
 ```
 
-**Examples:**
+**Auto-detect (no arguments):**
 ```bash
-# Auto-detect
+# Compares latest stable → latest candidate
 python3 ./scripts/gap-ocp-gate-ack.py
-
-# Explicit versions (uses minor versions: 4.21, 4.22)
-python3 ./scripts/gap-ocp-gate-ack.py --baseline 4.21 --target 4.22
-
-# With verbose output
-python3 ./scripts/gap-ocp-gate-ack.py --baseline 4.21.7 --target 4.22.0 --verbose
-
-# Environment variables
-BASE_VERSION=4.21 TARGET_VERSION=4.22 python3 ./scripts/gap-ocp-gate-ack.py
 
 # Custom report location
 REPORT_DIR=/ci-artifacts python3 ./scripts/gap-ocp-gate-ack.py
@@ -82,11 +93,11 @@ reports/gap-analysis-ocp-gate-ack_4.21_to_4.22_20260327_120000.json  # JSON
 ```
 
 **Exit Codes:**
-- `0`: Validation PASSED (CHECK #5 valid - all gates acknowledged or no gates required)
+- `0`: Validation PASSED (CHECK #5 valid - all gates acknowledged or no gates required) OR dry-run mode
 - `1`: Validation FAILED (CHECK #5 failed - missing acknowledgment file or unacknowledged gates) OR execution failure (e.g., missing tools, network errors, invalid versions)
 
 **Version Resolution:**
-- CLI flags > Environment variables > Auto-detect
+- `--version` flag > `OPENSHIFT_VERSION` env var > `--baseline` AND `--target` (both required) > `BASE_VERSION` AND `TARGET_VERSION` (both required) > Auto-detect
 - Auto-detect: latest stable (baseline) → latest candidate (target)
 - Uses minor versions (4.21, 4.22) for file lookups
 
@@ -193,6 +204,25 @@ Exit code: `1` (validation FAILED - CHECK #5, upgrade not ready)
 ```
 
 Exit code: `1` (validation FAILED - CHECK #5, upgrade not ready)
+
+## Warnings (Optional)
+
+If orphaned acknowledgment files are detected (both files present but no gates):
+```
+⚠️ Warnings
+- No admin gates found in cluster-version-operator for version 4.21, but unexpected admin-ack.yaml file is present in managed-cluster-config
+  File: deploy/osd-cluster-acks/ocp/4.21/admin-ack.yaml
+  Introduced in: https://github.com/openshift/managed-cluster-config/pull/2657
+```
+
+**Acknowledgment File Names:** Either `admin-ack.yaml` OR `admin-gates.yaml` is acceptable (script checks for both).
+
+**Validation Rules (when no gates exist):**
+- Both files present (acknowledgment + config) → WARNING (exit 0)
+- Only one file present → FAIL (exit 1)
+- Neither file present → PASS (exit 0)
+
+**Note:** Warnings are informational and do not cause the script to fail (exit 0). They help identify orphaned files that may need cleanup.
 
 ## Data Sources
 

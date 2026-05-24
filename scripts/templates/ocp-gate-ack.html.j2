@@ -171,6 +171,12 @@
             <p><strong>Generated:</strong> {{ timestamp }}</p>
             <p><strong>Baseline Version:</strong> {{ baseline_full }} ({{ baseline }})</p>
             <p><strong>Target Version:</strong> {{ target_full }} ({{ target }})</p>
+            {% if is_zstream %}
+            <p><strong>Upgrade Type:</strong> Z-stream ({{ baseline }} → {{ target }})</p>
+            <p><strong>Acknowledgment Check:</strong> Gates from {{ baseline }} validated against acknowledgments in {{ ack_check_version }}</p>
+            {% else %}
+            <p><strong>Upgrade Type:</strong> Cross-minor ({{ baseline }} → {{ ack_check_version }})</p>
+            {% endif %}
         </div>
 
         <div class="status-banner {% if summary.upgrade_ready %}ready{% else %}not-ready{% endif %}">
@@ -213,6 +219,23 @@
                 </tr>
             </tbody>
         </table>
+
+        {% if warnings %}
+        <div class="alert warning" style="background-color: #fff3cd; border-left: 4px solid #ffc107; color: #856404;">
+            <h3 style="color: #856404; margin-top: 0;">⚠️ Warnings</h3>
+            {% for warning in warnings %}
+            <div style="margin-bottom: 15px;">
+                <p style="margin: 5px 0;"><strong>{{ warning.message }}</strong></p>
+                <p style="margin: 5px 0;">File: <code>{{ warning.file }}</code></p>
+                {% if warning.pr_link %}
+                <p style="margin: 5px 0;">Introduced in: <a href="{{ warning.pr_link }}" target="_blank" style="color: #0066cc; text-decoration: underline;">{{ warning.pr_link }}</a></p>
+                {% else %}
+                <p style="margin: 5px 0;">PR: Unknown</p>
+                {% endif %}
+            </div>
+            {% endfor %}
+        </div>
+        {% endif %}
 
         <h2>Acknowledgment Structure Validation</h2>
 
@@ -271,22 +294,22 @@
 
         {% if summary.gates_requiring_ack == 0 %}
         <div class="alert info">
-            <strong>No Admin Gates:</strong> No admin gates found in baseline version {{ baseline }}. Upgrade to {{ target }} requires no acknowledgments.
+            <strong>No Admin Gates:</strong> No admin gates found in baseline version {{ baseline }}. Upgrade to {{ ack_check_version }} requires no acknowledgments.
         </div>
         {% else %}
 
         {% if summary.ack_file_missing %}
         <div class="alert error">
             <h3>❌ Acknowledgment File Missing</h3>
-            <p><strong>Critical Issue:</strong> The admin acknowledgment file for version {{ target }} was not found.</p>
-            <p><strong>Required file:</strong> <code>deploy/osd-cluster-acks/ocp/{{ target }}/admin-ack.yaml</code> in the <code>openshift/managed-cluster-config</code> repository.</p>
-            <p><strong>Action Required:</strong> Create the acknowledgment file to allow upgrades from {{ baseline }} to {{ target }}.</p>
+            <p><strong>Critical Issue:</strong> The admin acknowledgment file for version {{ ack_check_version }} was not found.</p>
+            <p><strong>Required file:</strong> <code>deploy/osd-cluster-acks/ocp/{{ ack_check_version }}/admin-ack.yaml</code> in the <code>openshift/managed-cluster-config</code> repository.</p>
+            <p><strong>Action Required:</strong> Create the acknowledgment file to allow upgrades from {{ baseline }} to {{ ack_check_version }}.</p>
         </div>
         {% endif %}
 
         {% if analysis.acknowledged_gates %}
         <h3>✅ Acknowledged Gates</h3>
-        <p>The following gates are properly acknowledged in {{ target }}:</p>
+        <p>The following gates are properly acknowledged in {{ ack_check_version }}:</p>
         <ul class="gate-list">
             {% for gate in analysis.acknowledged_gates %}
             <li class="acknowledged">✅ <code>{{ gate }}</code></li>
@@ -297,19 +320,19 @@
         {% if analysis.unacknowledged_gates %}
         <h3>❌ Unacknowledged Gates</h3>
         <div class="alert error">
-            <p><strong>Critical Issue:</strong> The following gates are NOT acknowledged in {{ target }}:</p>
+            <p><strong>Critical Issue:</strong> The following gates are NOT acknowledged in {{ ack_check_version }}:</p>
         </div>
         <ul class="gate-list">
             {% for gate in analysis.unacknowledged_gates %}
             <li class="unacknowledged">❌ <code>{{ gate }}</code></li>
             {% endfor %}
         </ul>
-        <p><strong>Action Required:</strong> Add acknowledgments for these gates to <code>deploy/osd-cluster-acks/ocp/{{ target }}/admin-ack.yaml</code>.</p>
+        <p><strong>Action Required:</strong> Add acknowledgments for these gates to <code>deploy/osd-cluster-acks/ocp/{{ ack_check_version }}/admin-ack.yaml</code>.</p>
         {% endif %}
 
         {% if analysis.extra_acks %}
         <h3>ℹ️ Extra Acknowledgments</h3>
-        <p>The following acknowledgments are present in {{ target }} but not required by baseline {{ baseline }}:</p>
+        <p>The following acknowledgments are present in {{ ack_check_version }} but not required by baseline {{ baseline }}:</p>
         <ul class="gate-list">
             {% for ack in analysis.extra_acks %}
             <li class="extra">ℹ️ <code>{{ ack }}</code></li>
@@ -330,7 +353,7 @@
         <p>No admin gates found.</p>
         {% endif %}
 
-        <h3>Target Acknowledgments ({{ target }})</h3>
+        <h3>Target Acknowledgments ({{ ack_check_version }})</h3>
         {% if target_acks %}
         <pre><code>{% for key, value in target_acks.items() %}{{ key }}: |
   {{ value | indent(2) }}
@@ -344,7 +367,13 @@
         <h2>References</h2>
         <ul>
             <li><strong>CVO Admin Gates:</strong> <a href="https://github.com/openshift/cluster-version-operator/blob/release-{{ baseline }}/install/0000_00_cluster-version-operator_01_admingate_configmap.yaml" target="_blank">cluster-version-operator/release-{{ baseline }}</a></li>
-            <li><strong>MCC Admin Acks:</strong> <a href="https://github.com/openshift/managed-cluster-config/blob/master/deploy/osd-cluster-acks/ocp/{{ target }}/admin-ack.yaml" target="_blank">managed-cluster-config/{{ target }}</a></li>
+            <li><strong>MCC Admin Acks:</strong>
+            {% if structure_validation.ack_filename %}
+            <a href="https://github.com/openshift/managed-cluster-config/blob/master/deploy/osd-cluster-acks/ocp/{{ ack_check_version }}/{{ structure_validation.ack_filename }}" target="_blank">managed-cluster-config/{{ ack_check_version }}/{{ structure_validation.ack_filename }}</a>
+            {% else %}
+            <a href="https://github.com/openshift/managed-cluster-config/tree/master/deploy/osd-cluster-acks/ocp/{{ ack_check_version }}" target="_blank">managed-cluster-config/{{ ack_check_version }}</a>
+            {% endif %}
+            </li>
         </ul>
 
         <div class="footer">

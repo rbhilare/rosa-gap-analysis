@@ -65,6 +65,9 @@ See [Installation Guide](docs/getting-started.md) for detailed setup instruction
 ./scripts/gap-all.sh --version 4.21  # GA: z-stream (stable → stable)
 ./scripts/gap-all.sh --version 4.22  # Pre-GA: cross-minor (stable → candidate)
 ./scripts/gap-all.sh --version 4.23  # Other: cross-minor (candidate → candidate)
+./scripts/gap-all.sh --version 5.0   # 5.x: 4.22 → 5.0 (special mapping)
+./scripts/gap-all.sh --version 5.1   # 5.x: 4.23 → 5.1 (special mapping)
+./scripts/gap-all.sh --version 5.2   # 5.x: 5.1 → 5.2 (normal progression)
 OPENSHIFT_VERSION=4.22 ./scripts/gap-all.sh  # Same as --version 4.22
 
 # Explicit baseline and target (both required)
@@ -119,9 +122,44 @@ curl -s https://amd64.ocp.releases.ci.openshift.org/api/v1/releasestreams/accept
 # All accepted 4-stable versions
 curl -s https://amd64.ocp.releases.ci.openshift.org/api/v1/releasestreams/accepted | \
   jq -r '.["4-stable"][]'
+
+# Get latest 5.0 RC candidate
+curl -s https://amd64.ocp.releases.ci.openshift.org/api/v1/releasestreams/accepted | \
+  jq -r '.["4-stable"][] | select(startswith("5.0.0-rc."))' | head -1
+
+# Get latest 5.1 RC candidate
+curl -s https://amd64.ocp.releases.ci.openshift.org/api/v1/releasestreams/accepted | \
+  jq -r '.["4-stable"][] | select(startswith("5.1.0-rc."))' | head -1
 ```
 
 **Note:** These queries return only **accepted** builds that have passed CI testing. The framework uses this endpoint to ensure reliable version selection.
+
+### OpenShift 5.x Version Mapping
+
+The framework supports special version mappings for the major version transition from 4.x to 5.x:
+
+| Target | Baseline | Upgrade Path |
+|--------|----------|--------------|
+| `5.0` | `4.22.x` | 4.22 → 5.0 (first major bump) |
+| `5.1` | `4.23.x` | 4.23 → 5.1 (second path to 5.x) |
+| `5.2+` | `5.(x-1)` | Normal sequential progression |
+
+**Examples:**
+```bash
+# Compare 4.22 → 5.0
+./scripts/gap-all.sh --version 5.0
+# Resolves to: baseline=4.22.15, target=5.0.0-rc.0
+
+# Compare 4.23 → 5.1
+./scripts/gap-all.sh --version 5.1
+# Resolves to: baseline=4.23.0-rc.1, target=5.1.0-rc.0
+
+# Compare 5.1 → 5.2 (normal progression)
+./scripts/gap-all.sh --version 5.2
+# Resolves to: baseline=5.1.5, target=5.2.0-rc.0
+```
+
+See [Validation Checks](docs/validation-checks.md#version-resolution) for detailed information about 5.x version resolution.
 
 ## Documentation
 

@@ -456,9 +456,15 @@
                     </tr>
                     {% endif %}
                     {% if feature_gates %}
+                    {% if feature_gates.comparison %}
                     {% set fg_added = feature_gates.comparison.added|length %}
                     {% set fg_removed = feature_gates.comparison.removed|length %}
                     {% set fg_default = feature_gates.comparison.newly_enabled_by_default|length %}
+                    {% else %}
+                    {% set fg_added = 0 %}
+                    {% set fg_removed = 0 %}
+                    {% set fg_default = 0 %}
+                    {% endif %}
                     <tr>
                         <td><strong>CHECK #6:</strong> Feature Gates</td>
                         <td><span class="added">✅ PASS</span> (Info)</td>
@@ -772,20 +778,37 @@
             {% if ocp_gate_ack %}
             <h2 id="ocp-gates">CHECK #5: OCP Admin Gate Acknowledgment</h2>
 
+            {% if ocp_gate_ack.warnings %}
+            <div class="alert warning" style="background-color: #fff3cd; border-left: 4px solid #ffc107; color: #856404;">
+                <h4 style="color: #856404; margin-top: 0;">⚠️ Warnings</h4>
+                {% for warning in ocp_gate_ack.warnings %}
+                <div style="margin-bottom: 10px;">
+                    <p style="margin: 5px 0;"><strong>{{ warning.message }}</strong></p>
+                    <p style="margin: 5px 0;">File: <code>{{ warning.file }}</code></p>
+                    {% if warning.pr_link %}
+                    <p style="margin: 5px 0;">Introduced in: <a href="{{ warning.pr_link }}" target="_blank" style="color: #0066cc; text-decoration: underline;">{{ warning.pr_link }}</a></p>
+                    {% else %}
+                    <p style="margin: 5px 0;">PR: Unknown</p>
+                    {% endif %}
+                </div>
+                {% endfor %}
+            </div>
+            {% endif %}
+
             <h3>Validation Status</h3>
-            {% set minor_version = ocp_gate_ack.target.split('.')[0] + '.' + ocp_gate_ack.target.split('.')[1] %}
+            {% set minor_version = ocp_gate_ack.ack_check_version.split('.')[0] + '.' + ocp_gate_ack.ack_check_version.split('.')[1] %}
             <div class="alert {% if ocp_gate_ack.summary.gates_requiring_ack == 0 or ocp_gate_ack.validation_result == 'PASS' %}success{% else %}error{% endif %}">
                 <strong>{% if ocp_gate_ack.summary.gates_requiring_ack == 0 or ocp_gate_ack.validation_result == 'PASS' %}✅ Validation Passed{% else %}❌ Validation Failed{% endif %}</strong>
                 <ul style="margin: 10px 0 0 0; padding-left: 20px;">
                 {% if ocp_gate_ack.summary.gates_requiring_ack == 0 %}
                     <li><strong>CHECK #5: Admin Gate Acknowledgment - PASSED</strong></li>
                     <li style="margin-left: 20px;">No admin gates found in baseline version <code>{{ baseline }}</code></li>
-                    <li style="margin-left: 20px;">No acknowledgments required for upgrade to <code>{{ target }}</code></li>
+                    <li style="margin-left: 20px;">No acknowledgments required for version <code>{{ ocp_gate_ack.ack_check_version }}</code></li>
                 {% elif ocp_gate_ack.validation_result == 'FAIL' %}
                     <li><strong>CHECK #5: Admin Gate Acknowledgment - FAILED</strong></li>
                     {% if ocp_gate_ack.summary.ack_file_missing and ocp_gate_ack.summary.gates_requiring_ack > 0 %}
-                        <li style="margin-left: 20px;">Acknowledgment file missing for version {{ ocp_gate_ack.target }}</li>
-                        <li style="margin-left: 20px;">Expected location: <a href="https://github.com/openshift/managed-cluster-config/tree/master/deploy/osd-cluster-acks/ocp/{{ minor_version }}" target="_blank" style="color: #007bff; text-decoration: underline;">deploy/osd-cluster-acks/ocp/{{ minor_version }}/admin-ack.yaml</a></li>
+                        <li style="margin-left: 20px;">Acknowledgment file missing for version {{ ocp_gate_ack.ack_check_version }}</li>
+                        <li style="margin-left: 20px;">Expected location: <a href="https://github.com/openshift/managed-cluster-config/tree/master/deploy/osd-cluster-acks/ocp/{{ minor_version }}" target="_blank" style="color: #007bff; text-decoration: underline;">deploy/osd-cluster-acks/ocp/{{ minor_version }}/admin-ack.yaml or admin-gates.yaml</a></li>
                     {% endif %}
                     {% if ocp_gate_ack.summary.unacknowledged > 0 %}
                         <li style="margin-left: 20px;">{{ ocp_gate_ack.summary.unacknowledged }} gate(s) not acknowledged out of {{ ocp_gate_ack.summary.gates_requiring_ack }}</li>
@@ -797,7 +820,13 @@
                     {% endif %}
                 {% else %}
                     <li><strong>CHECK #5: Admin Gate Acknowledgment - PASSED</strong></li>
-                    <li style="margin-left: 20px;">Location: <a href="https://github.com/openshift/managed-cluster-config/tree/master/deploy/osd-cluster-acks/ocp/{{ minor_version }}" target="_blank" style="color: #007bff; text-decoration: underline;">deploy/osd-cluster-acks/ocp/{{ minor_version }}/admin-ack.yaml</a></li>
+                    <li style="margin-left: 20px;">Location:
+                    {% if ocp_gate_ack.structure_validation.ack_filename %}
+                    <a href="https://github.com/openshift/managed-cluster-config/blob/master/deploy/osd-cluster-acks/ocp/{{ minor_version }}/{{ ocp_gate_ack.structure_validation.ack_filename }}" target="_blank" style="color: #007bff; text-decoration: underline;">deploy/osd-cluster-acks/ocp/{{ minor_version }}/{{ ocp_gate_ack.structure_validation.ack_filename }}</a>
+                    {% else %}
+                    <a href="https://github.com/openshift/managed-cluster-config/tree/master/deploy/osd-cluster-acks/ocp/{{ minor_version }}" target="_blank" style="color: #007bff; text-decoration: underline;">deploy/osd-cluster-acks/ocp/{{ minor_version }}</a>
+                    {% endif %}
+                    </li>
                     <li style="margin-left: 20px;">Validated {{ ocp_gate_ack.summary.acknowledged }} admin gate(s) acknowledged for baseline <code>{{ baseline }}</code></li>
                 {% endif %}
                 </ul>
@@ -827,9 +856,21 @@
             {% endif %}
 
             {% if feature_gates %}
+            <h2 id="feature-gates">Feature Gate Details</h2>
+
+            {% if feature_gates.is_z_stream %}
+            <div style="background-color: #d1ecf1; border-left: 4px solid #0c5460; padding: 15px; margin: 20px 0; border-radius: 5px;">
+                <h4 style="color: #0c5460; margin-top: 0;">ℹ️ Z-Stream Comparison</h4>
+                <p><strong>Baseline:</strong> {{ feature_gates.baseline }} → <strong>Target:</strong> {{ feature_gates.target }}</p>
+                <p>Showing default feature gates for {{ feature_gates.version }} (z-stream updates should not change gates)</p>
+            </div>
+
+            <p><strong>Default:Hypershift gates:</strong> {{ feature_gates.default_hypershift_gates|length }}</p>
+            <p><strong>Total Hypershift-relevant gates:</strong> {{ feature_gates.total_hypershift_gates }}</p>
+
+            {% else %}
             {% set has_changes = feature_gates.comparison.added or feature_gates.comparison.removed or feature_gates.comparison.newly_enabled_by_default or feature_gates.comparison.removed_from_default %}
             {% if has_changes %}
-            <h2 id="feature-gates">Feature Gate Details</h2>
 
             {% set fg_added = feature_gates.comparison.added|length %}
             {% set fg_removed = feature_gates.comparison.removed|length %}
@@ -1029,6 +1070,7 @@
                     });
                 });
             </script>
+            {% endif %}
             {% endif %}
             {% endif %}
 

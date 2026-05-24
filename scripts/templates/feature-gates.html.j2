@@ -103,6 +103,30 @@
             color: #666;
             font-size: 0.9em;
         }
+        details {
+            margin: 20px 0;
+            border: 1px solid #e0e0e0;
+            border-radius: 5px;
+            padding: 15px;
+            background-color: #f8f9fa;
+        }
+        details summary {
+            cursor: pointer;
+            font-weight: 600;
+            color: #0066cc;
+            padding: 10px;
+            margin: -15px -15px 0 -15px;
+            background-color: #e3f2fd;
+            border-radius: 5px 5px 0 0;
+            user-select: none;
+        }
+        details summary:hover {
+            background-color: #bbdefb;
+        }
+        details[open] summary {
+            border-bottom: 1px solid #e0e0e0;
+            margin-bottom: 15px;
+        }
     </style>
 </head>
 <body>
@@ -116,6 +140,43 @@
             <p><strong>Filter:</strong> Hypershift-relevant only (Default:Hypershift, DevPreviewNoUpgrade:Hypershift, TechPreviewNoUpgrade:Hypershift)</p>
         </div>
 
+        {% if is_z_stream %}
+        <div style="background-color: #d1ecf1; border-left: 4px solid #0c5460; padding: 15px; margin: 20px 0; border-radius: 5px;">
+            <h3 style="color: #0c5460; margin-top: 0;">ℹ️ Z-Stream Comparison</h3>
+            <p><strong>Baseline:</strong> {{ baseline }} → <strong>Target:</strong> {{ target }}</p>
+            <p>Z-stream updates ({{ version }}) should not introduce or remove feature gates.</p>
+            <p>This report shows the <strong>default feature gates</strong> for version {{ version }}.</p>
+        </div>
+
+        <h2>Default Hypershift Feature Gates ({{ version }})</h2>
+        <p>Total Hypershift-relevant gates: <strong>{{ total_hypershift_gates }}</strong></p>
+        <p>Default:Hypershift gates: <strong>{{ default_hypershift_gates|length }}</strong></p>
+
+        <details>
+            <summary>📋 View all {{ default_hypershift_gates|length }} Default:Hypershift gates (click to expand)</summary>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Feature Gate</th>
+                        <th>Enabled In</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for gate in default_hypershift_gates|sort(attribute='feature_gate') %}
+                    <tr>
+                        <td><code>{{ gate.feature_gate }}</code></td>
+                        <td>
+                            {% for enabled in gate.enabled %}
+                                <span style="background-color: #4caf50; color: white; padding: 3px 8px; border-radius: 3px; margin-right: 5px; font-size: 0.85em;">{{ enabled }}</span>
+                            {% endfor %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </details>
+
+        {% else %}
         <h2>Summary</h2>
 
         {% set total_changes = (comparison.added|length) + (comparison.removed|length) + (comparison.newly_enabled_by_default|length) + (comparison.removed_from_default|length) %}
@@ -255,6 +316,7 @@
                 {% endfor %}
             </tbody>
         </table>
+        {% endif %}
         {% endif %}
 
         <div class="footer">

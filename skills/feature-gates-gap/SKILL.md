@@ -9,6 +9,7 @@ compatibility:
   required_tools:
     - python3
     - curl (for Sippy API access)
+    - jq (for JSON processing)
 ---
 
 # Feature Gate Gap Analysis
@@ -37,40 +38,42 @@ Analyze differences in OpenShift feature gates between versions using the Sippy 
 
 ## Script Usage
 
-**Auto-detect versions (recommended):**
+**Single version (recommended):**
 ```bash
-# Compares latest stable → latest candidate
-python3 ./scripts/gap-feature-gates.py
+# Auto-resolves baseline and target
+python3 ./scripts/gap-feature-gates.py --version 4.22
+
+# Using environment variable
+OPENSHIFT_VERSION=4.22 python3 ./scripts/gap-feature-gates.py
+
+# 5.x versions (special baseline mapping)
+python3 ./scripts/gap-feature-gates.py --version 5.0   # 4.22 → 5.0
+OPENSHIFT_VERSION=5.1 python3 ./scripts/gap-feature-gates.py  # 4.23 → 5.1
 
 # With verbose output
-python3 ./scripts/gap-feature-gates.py --verbose
+python3 ./scripts/gap-feature-gates.py --version 4.22 --verbose
 
 # Custom report directory
-python3 ./scripts/gap-feature-gates.py --report-dir /custom/reports
+python3 ./scripts/gap-feature-gates.py --version 4.22 --report-dir /custom/reports
 ```
 
-**Explicit versions:**
+**Explicit baseline and target:**
 ```bash
 python3 ./scripts/gap-feature-gates.py \
   --baseline <version> \
   --target <version> \
   [--report-dir <path>] \
   [--verbose]
+
+# Examples
+python3 ./scripts/gap-feature-gates.py --baseline 4.21 --target 4.22
+python3 ./scripts/gap-feature-gates.py --baseline 4.21 --target 4.22 --verbose
 ```
 
-**Examples:**
+**Auto-detect (no arguments):**
 ```bash
-# Auto-detect
+# Compares latest stable → latest candidate
 python3 ./scripts/gap-feature-gates.py
-
-# Explicit versions
-python3 ./scripts/gap-feature-gates.py --baseline 4.21 --target 4.22
-
-# With verbose output showing all changes
-python3 ./scripts/gap-feature-gates.py --baseline 4.21 --target 4.22 --verbose
-
-# Environment variables
-BASE_VERSION=4.21 TARGET_VERSION=4.22 python3 ./scripts/gap-feature-gates.py
 
 # Use nightly as target
 TARGET_VERSION=NIGHTLY python3 ./scripts/gap-feature-gates.py
@@ -90,7 +93,7 @@ reports/gap-analysis-feature-gates_4.21_to_4.22_20260325_120000.json  # JSON
 - `1`: Execution failure (e.g., missing tools, network errors, invalid versions)
 
 **Version Resolution:**
-- CLI flags > Environment variables > Auto-detect
+- `--version` flag > `OPENSHIFT_VERSION` env var > `--baseline` AND `--target` (both required) > `BASE_VERSION` AND `TARGET_VERSION` (both required) > Auto-detect
 - Auto-detect: latest stable (baseline) → latest candidate (target)
 - Special keywords: `TARGET_VERSION=NIGHTLY` or `TARGET_VERSION=CANDIDATE`
 
@@ -223,3 +226,32 @@ curl -s "https://sippy.dptools.openshift.org/api/feature_gates?release=4.22" | \
 - New default-enabled gates may affect cluster behavior
 - Removed gates indicate deprecated features
 - Gates graduating to default indicate feature stabilization
+
+## Z-Stream Comparison
+
+When comparing z-stream versions (same minor version, e.g., 4.21.15 → 4.21.16):
+
+```
+[INFO] Starting Feature Gate Gap Analysis
+[INFO] Baseline version: 4.21.15 (minor: 4.21)
+[INFO] Target version: 4.21.16 (minor: 4.21)
+[INFO] Comparison type: Z-stream (same minor version)
+[INFO] Z-stream comparison detected: 4.21.15 → 4.21.16
+[INFO] Z-stream updates should not introduce/remove feature gates
+[INFO] Showing default feature gates for 4.21
+[SUCCESS] Found 23 Default:Hypershift gates in 4.21
+[INFO] Total Hypershift-relevant gates: 45
+```
+
+**Behavior:**
+- Z-stream updates (e.g., 4.21.15 → 4.21.16) should not change feature gates
+- Report shows default feature gates for the version instead of differences
+- Exit code still 0 (informational only)
+
+**HTML Report UI:**
+- Default gates table is wrapped in a collapsible drop-down
+- Summary shows: "📋 View all N Default:Hypershift gates (click to expand)"
+- Click to expand/collapse the full list of default gates
+- Helps keep reports concise while providing full details on demand
+
+**Cross-minor comparison** (e.g., 4.21 → 4.22) shows differences as usual.

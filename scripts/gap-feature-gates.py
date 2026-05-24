@@ -13,7 +13,7 @@ from urllib.error import URLError
 sys.path.insert(0, str(Path(__file__).parent / 'lib'))
 
 from common import log_info, log_success, log_error, check_command
-from openshift_releases import resolve_baseline_version, resolve_target_version, extract_minor_version
+from openshift_releases import resolve_openshift_version, extract_minor_version
 from reporters import generate_html_report, generate_json_report
 
 
@@ -184,6 +184,18 @@ def print_comparison(comparison, baseline, target, verbose=False):
                 log_info(f"  = {gate}")
 
 
+def print_zstream_summary(default_hypershift_gates, total_hypershift_gates, version, verbose=False):
+    """Print z-stream summary results."""
+    log_success(f"Found {len(default_hypershift_gates)} Default:Hypershift gates in {version}")
+    log_info(f"Total Hypershift-relevant gates: {total_hypershift_gates}")
+
+    if verbose:
+        log_info("")
+        log_info(f"Default:Hypershift feature gates in {version}:")
+        for gate in sorted(default_hypershift_gates, key=lambda g: g['feature_gate']):
+            log_info(f"  ✓ {gate['feature_gate']}")
+
+
 def main():
     """Main entry point."""
     parser = argparse.ArgumentParser(
@@ -209,50 +221,110 @@ Exit Codes:
         """
     )
 
-    parser.add_argument('--baseline', help='Baseline version (default: auto-detect from latest stable)')
-    parser.add_argument('--target', help='Target version (default: auto-detect from latest candidate)')
+    parser.add_argument('--version', help='Single version to analyze (auto-resolves baseline and target)')
+    parser.add_argument('--baseline', help='Baseline version (requires --target)')
+    parser.add_argument('--target', help='Target version (requires --baseline)')
     parser.add_argument('--verbose', action='store_true', help='Enable verbose logging')
     parser.add_argument('--report-dir',
                        default=os.environ.get('REPORT_DIR', 'reports'),
                        help='Directory to store reports (default: reports/, env: REPORT_DIR)')
+    parser.add_argument('--dry-run', action='store_true',
+                       help='Show versions that would be used and exit (no analysis performed)')
 
     args = parser.parse_args()
 
     # Resolve versions using shared logic
-    baseline = resolve_baseline_version(
-        cli_arg=args.baseline,
-        env_var=os.environ.get('BASE_VERSION')
-    )
-    target = resolve_target_version(
-        cli_arg=args.target,
-        env_var=os.environ.get('TARGET_VERSION')
-    )
+    # Check for single version resolution first (--version or OPENSHIFT_VERSION)
+    openshift_version = args.version or os.environ.get('OPENSHIFT_VERSION')
+
+    if openshift_version:
+        # Single version auto-resolution
+        log_info(f"Using single version: {openshift_version}")
+        baseline_full, target_full = resolve_openshift_version(openshift_version)
+        if not baseline_full or not target_full:
+            log_error(f"Failed to resolve versions from: {openshift_version}")
+            sys.exit(1)
+    elif args.baseline and args.target:
+        # Explicit baseline and target provided
+        baseline_full = args.baseline
+        target_full = args.target
+    else:
+        # Auto-detect (fallback to individual resolution)
+        from openshift_releases import resolve_baseline_version, resolve_target_version
+        baseline_full = args.baseline or resolve_baseline_version()
+        target_full = args.target or resolve_target_version()
 
     # Feature gates API needs minor version only (e.g., "4.21" not "4.21.7")
-    baseline = extract_minor_version(baseline)
-    target = extract_minor_version(target)
+    baseline = extract_minor_version(baseline_full)
+    target = extract_minor_version(target_full)
+
+    # Detect z-stream comparison
+    is_z_stream = (baseline == target)
 
     # Main execution
     log_info("Starting Feature Gate Gap Analysis")
     log_info("=========================================")
-    log_info(f"Baseline version: {baseline}")
-    log_info(f"Target version: {target}")
+    log_info(f"Baseline version: {baseline_full} (minor: {baseline})")
+    log_info(f"Target version: {target_full} (minor: {target})")
+    if is_z_stream:
+        log_info(f"Comparison type: Z-stream (same minor version)")
+    else:
+        log_info(f"Comparison type: Cross-minor ({baseline} → {target})")
     log_info("=========================================")
+
+    # Exit early if dry-run
+    if args.dry_run:
+        log_info("")
+        log_info("Dry-run mode enabled - exiting without performing analysis")
+        sys.exit(0)
 
     # Check prerequisites
     check_command('curl')
 
-    # Fetch feature gates
-    baseline_data = fetch_feature_gates(baseline)
-    target_data = fetch_feature_gates(target)
+    if is_z_stream:
+        # Z-stream comparison: show default gates instead of differences
+        log_info(f"Z-stream comparison detected: {baseline_full} → {target_full}")
+        log_info(f"Z-stream updates should not introduce/remove feature gates")
+        log_info(f"Showing default feature gates for {target}")
 
-    # Compare
-    log_info("Comparing feature gates...")
-    comparison = compare_feature_gates(baseline_data, target_data)
+        # Fetch target version gates only
+        target_data = fetch_feature_gates(target)
 
-    # Print results with CHECK #6
-    log_info("\nCHECK #6: Feature Gates Analysis")
-    print_comparison(comparison, baseline, target, args.verbose)
+        # Filter to Default:Hypershift gates
+        default_hypershift_gates = [
+            {
+                'feature_gate': gate['feature_gate'],
+                'enabled': gate.get('enabled', [])
+            }
+            for gate in target_data
+            if has_default_hypershift(gate.get('enabled', []))
+        ]
+
+        # Count all Hypershift-relevant gates
+        total_hypershift_gates = sum(
+            1 for gate in target_data
+            if is_hypershift_relevant(gate.get('enabled', []))
+        )
+
+        # Print results with CHECK #6
+        log_info("\nCHECK #6: Feature Gates Analysis (Z-stream)")
+        print_zstream_summary(default_hypershift_gates, total_hypershift_gates, target, args.verbose)
+
+    else:
+        # Cross-minor comparison: use existing logic
+        log_info(f"Cross-minor comparison: {baseline} → {target}")
+
+        # Fetch both versions
+        baseline_data = fetch_feature_gates(baseline)
+        target_data = fetch_feature_gates(target)
+
+        # Compare
+        log_info("Comparing feature gates...")
+        comparison = compare_feature_gates(baseline_data, target_data)
+
+        # Print results with CHECK #6
+        log_info("\nCHECK #6: Feature Gates Analysis")
+        print_comparison(comparison, baseline, target, args.verbose)
 
     # Generate reports
     # Create report directory if it doesn't exist
@@ -260,31 +332,53 @@ Exit Codes:
     os.makedirs(report_dir, exist_ok=True)
 
     timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-    added_count = len(comparison['added'])
-    removed_count = len(comparison['removed'])
-    newly_default_count = len(comparison['newly_enabled_by_default'])
-    removed_default_count = len(comparison['removed_from_default'])
-    continues_default_count = len(comparison.get('continues_default_hypershift', []))
-    total_changes = added_count + removed_count + newly_default_count + removed_default_count
     # Feature gates are informational only - always PASS regardless of changes
     validation_result = 'PASS'
 
-    report_data = {
-        'type': 'Feature Gate Gap Analysis',
-        'baseline': baseline,
-        'target': target,
-        'timestamp': datetime.now().isoformat(),
-        'validation_result': validation_result,
-        'comparison': comparison,
-        'summary': {
-            'added': added_count,
-            'removed': removed_count,
-            'newly_enabled_by_default': newly_default_count,
-            'removed_from_default': removed_default_count,
-            'continues_default_hypershift': continues_default_count,
-            'total_changes': total_changes
+    if is_z_stream:
+        # Z-stream report data
+        report_data = {
+            'type': 'Feature Gate Gap Analysis',
+            'version': target,
+            'baseline': baseline_full,
+            'target': target_full,
+            'is_z_stream': True,
+            'timestamp': datetime.now().isoformat(),
+            'validation_result': validation_result,
+            'default_hypershift_gates': default_hypershift_gates,
+            'total_hypershift_gates': total_hypershift_gates,
+            'summary': {
+                'default_hypershift_gates': len(default_hypershift_gates),
+                'total_hypershift_gates': total_hypershift_gates
+            },
+            'note': 'Z-stream updates should not change feature gates'
         }
-    }
+    else:
+        # Cross-minor report data
+        added_count = len(comparison['added'])
+        removed_count = len(comparison['removed'])
+        newly_default_count = len(comparison['newly_enabled_by_default'])
+        removed_default_count = len(comparison['removed_from_default'])
+        continues_default_count = len(comparison.get('continues_default_hypershift', []))
+        total_changes = added_count + removed_count + newly_default_count + removed_default_count
+
+        report_data = {
+            'type': 'Feature Gate Gap Analysis',
+            'baseline': baseline,
+            'target': target,
+            'is_z_stream': False,
+            'timestamp': datetime.now().isoformat(),
+            'validation_result': validation_result,
+            'comparison': comparison,
+            'summary': {
+                'added': added_count,
+                'removed': removed_count,
+                'newly_enabled_by_default': newly_default_count,
+                'removed_from_default': removed_default_count,
+                'continues_default_hypershift': continues_default_count,
+                'total_changes': total_changes
+            }
+        }
 
     # Always generate JSON report (needed for combined report)
     json_file = os.path.join(report_dir, f"gap-analysis-feature-gates_{baseline}_to_{target}_{timestamp}.json")
@@ -309,18 +403,27 @@ Exit Codes:
     log_success(f"\nCHECK #6: Feature Gates Analysis [PASS - Informational]")
     log_success(f"  Data Source: Sippy API")
     log_success(f"  URL: {sippy_url}")
-    if total_changes > 0:
-        log_success(f"  ℹ️  Detected {total_changes} change(s) (informational only)")
-        if added_count > 0:
-            log_success(f"    • {added_count} new feature gate(s)")
-        if removed_count > 0:
-            log_success(f"    • {removed_count} removed feature gate(s)")
-        if newly_default_count > 0:
-            log_success(f"    • {newly_default_count} newly enabled by default")
-        if removed_default_count > 0:
-            log_success(f"    • {removed_default_count} removed from default")
+
+    if is_z_stream:
+        log_success(f"  Comparison Type: Z-stream ({baseline_full} → {target_full})")
+        log_success(f"  ℹ️  Z-stream updates should not change feature gates")
+        log_success(f"  ✓ {len(default_hypershift_gates)} Default:Hypershift gates in {target}")
+        log_success(f"  ✓ {total_hypershift_gates} total Hypershift-relevant gates")
     else:
-        log_success(f"  ✓ No feature gate changes detected")
+        log_success(f"  Comparison Type: Cross-minor ({baseline} → {target})")
+        if total_changes > 0:
+            log_success(f"  ℹ️  Detected {total_changes} change(s) (informational only)")
+            if added_count > 0:
+                log_success(f"    • {added_count} new feature gate(s)")
+            if removed_count > 0:
+                log_success(f"    • {removed_count} removed feature gate(s)")
+            if newly_default_count > 0:
+                log_success(f"    • {newly_default_count} newly enabled by default")
+            if removed_default_count > 0:
+                log_success(f"    • {removed_default_count} removed from default")
+        else:
+            log_success(f"  ✓ No feature gate changes detected")
+
     log_success("")
     log_success(f"✅ PASSED - Feature Gates analysis complete (informational)")
     sys.exit(0)

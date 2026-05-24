@@ -48,19 +48,23 @@ Parse the comparison request to identify:
 
 Execute the `scripts/gap-aws-sts.py` Python script:
 
-**Auto-detect versions (recommended):**
+**Single version (recommended):**
 ```bash
-# Compares latest stable → latest candidate
-python3 ./scripts/gap-aws-sts.py
+# Auto-resolves baseline and target
+python3 ./scripts/gap-aws-sts.py --version 4.22
 
-# Use nightly as target
-TARGET_VERSION=NIGHTLY python3 ./scripts/gap-aws-sts.py
+# Using environment variable
+OPENSHIFT_VERSION=4.22 python3 ./scripts/gap-aws-sts.py
+
+# 5.x versions (special baseline mapping)
+python3 ./scripts/gap-aws-sts.py --version 5.0   # 4.22 → 5.0
+OPENSHIFT_VERSION=5.1 python3 ./scripts/gap-aws-sts.py  # 4.23 → 5.1
 
 # Custom report directory
-python3 ./scripts/gap-aws-sts.py --report-dir /custom/reports
+python3 ./scripts/gap-aws-sts.py --version 4.22 --report-dir /custom/reports
 ```
 
-**Explicit versions:**
+**Explicit baseline and target:**
 ```bash
 python3 ./scripts/gap-aws-sts.py \
   --baseline <version> \
@@ -73,12 +77,12 @@ python3 ./scripts/gap-aws-sts.py --baseline 4.21.6 --target 4.22.0-ec.3
 python3 ./scripts/gap-aws-sts.py --baseline 4.21 --target 4.22
 ```
 
-**Environment variables:**
+**Auto-detect (no arguments):**
 ```bash
-# Override versions
-BASE_VERSION=4.21.5 TARGET_VERSION=4.22.0-ec.2 python3 ./scripts/gap-aws-sts.py
+# Compares latest stable → latest candidate
+python3 ./scripts/gap-aws-sts.py
 
-# Use nightly
+# Use nightly as target
 TARGET_VERSION=NIGHTLY python3 ./scripts/gap-aws-sts.py
 
 # Custom report location
@@ -249,11 +253,20 @@ python3 ./scripts/gap-aws-sts.py
 # Reports generated in: ./reports/
 ```
 
+**User**: "Check if AWS STS policies changed for OpenShift 4.22"
+
+**Response**:
+```bash
+# Execute the gap analysis (auto-resolves baseline and target)
+python3 ./scripts/gap-aws-sts.py --version 4.22 --verbose
+# View results: firefox reports/gap-analysis-aws-sts_*.html
+```
+
 **User**: "Check if AWS STS policies changed between OpenShift 4.21 and 4.22"
 
 **Response**:
 ```bash
-# Execute the gap analysis
+# Execute the gap analysis with explicit versions
 python3 ./scripts/gap-aws-sts.py --baseline 4.21 --target 4.22 --verbose
 # View results: firefox reports/gap-analysis-aws-sts_*.html
 ```
@@ -320,8 +333,10 @@ fi
 ## Practical Tips
 
 **Version Detection:**
-- **Auto-detect (recommended)**: No flags needed, compares latest stable → latest candidate
-- **Environment variables**: `BASE_VERSION` and `TARGET_VERSION` for CI/CD pipelines
+- **Single version (recommended)**: `--version 4.22` or `OPENSHIFT_VERSION=4.22`, auto-resolves baseline and target
+- **Explicit versions**: `--baseline 4.21 --target 4.22` (both required)
+- **Auto-detect (no args)**: No flags needed, compares latest stable → latest candidate
+- **Environment variables**: `OPENSHIFT_VERSION` (single version), or `BASE_VERSION` and `TARGET_VERSION` (explicit pair) for CI/CD pipelines
 - **Special keywords**: `TARGET_VERSION=NIGHTLY` for nightly builds, `TARGET_VERSION=CANDIDATE` for explicit candidate
 
 **Version Format:**

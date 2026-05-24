@@ -14,7 +14,7 @@ from urllib.error import URLError, HTTPError
 sys.path.insert(0, str(Path(__file__).parent / 'lib'))
 
 from common import log_info, log_success, log_error, log_warning
-from openshift_releases import resolve_baseline_version, resolve_target_version, extract_minor_version
+from openshift_releases import resolve_openshift_version, extract_minor_version, get_next_minor_version
 from reporters import generate_html_report, generate_json_report
 from ack_validation import fetch_yaml_from_url, calculate_expected_baseline, validate_config_yaml
 
@@ -67,44 +67,143 @@ def fetch_admin_gates(version):
 
 
 def fetch_admin_acks(version):
-    """Fetch admin acknowledgments from managed-cluster-config repo."""
-    url = MCC_ADMIN_ACK_URL.format(version=version)
-    log_info(f"Fetching admin acknowledgments from {url}")
+    """
+    Fetch admin acknowledgments from managed-cluster-config repo.
 
-    ack_configmap = fetch_yaml_from_github(url)
-    if not ack_configmap:
-        log_warning(f"Admin acknowledgment ConfigMap not found for version {version}")
-        return None
+    Tries both admin-ack.yaml and admin-gates.yaml filenames.
 
-    # Extract acks from data field
-    acks = ack_configmap.get('data', {})
-    if acks:
-        log_success(f"Found {len(acks)} acknowledgment(s) for version {version}")
-    else:
-        log_warning(f"No acknowledgments found in ConfigMap for version {version}")
+    Returns:
+        tuple: (acks_data, filename) where filename is the file that was found,
+               or (None, None) if neither file exists
+    """
+    # Try both possible filenames
+    possible_filenames = ['admin-ack.yaml', 'admin-gates.yaml']
 
-    return acks
+    for filename in possible_filenames:
+        url = f"https://raw.githubusercontent.com/openshift/managed-cluster-config/master/deploy/osd-cluster-acks/ocp/{version}/{filename}"
+        log_info(f"Fetching admin acknowledgments from {url}")
+
+        ack_configmap = fetch_yaml_from_github(url)
+        if ack_configmap:
+            # Extract acks from data field
+            acks = ack_configmap.get('data', {})
+            if acks:
+                log_success(f"Found {len(acks)} acknowledgment(s) in {filename} for version {version}")
+            else:
+                log_warning(f"No acknowledgments found in {filename} for version {version}")
+            return (acks, filename)
+
+    log_warning(f"Admin acknowledgment file not found for version {version} (tried: {', '.join(possible_filenames)})")
+    return (None, None)
 
 
-def validate_ocp_acknowledgment_structure(baseline, target, gates_exist, ack_file_exists):
+def get_pr_link_for_file(file_path, target_version):
+    """
+    Find the PR that introduced a specific file in managed-cluster-config.
+
+    Uses commit history API to find the exact commit that added the file,
+    then queries for the PR associated with that commit.
+
+    Args:
+        file_path: Path to file in managed-cluster-config repo (e.g., "deploy/osd-cluster-acks/ocp/4.22/admin-ack.yaml")
+        target_version: Target version (e.g., "4.22")
+
+    Returns:
+        GitHub PR URL string or None if not found
+    """
+    import os
+    from urllib.request import Request
+    from urllib.error import HTTPError, URLError
+    import json
+
+    try:
+        # Step 1: Get commit history for this specific file
+        # This returns commits in reverse chronological order (newest first)
+        commits_api_url = f'https://api.github.com/repos/openshift/managed-cluster-config/commits?path={file_path}&per_page=50'
+
+        headers = {'Accept': 'application/vnd.github.v3+json'}
+        gh_token = os.environ.get('GH_TOKEN') or os.environ.get('GITHUB_TOKEN')
+        if gh_token:
+            headers['Authorization'] = f'token {gh_token}'
+
+        req = Request(commits_api_url, headers=headers)
+        response = urlopen(req, timeout=10)
+        commits = json.loads(response.read().decode('utf-8'))
+
+        if not commits:
+            return None
+
+        # The last commit in the list is the oldest (when file was added)
+        first_commit_sha = commits[-1]['sha']
+
+        # Step 2: Get the PR associated with this commit
+        pr_api_url = f'https://api.github.com/repos/openshift/managed-cluster-config/commits/{first_commit_sha}/pulls'
+        req = Request(pr_api_url, headers=headers)
+        response = urlopen(req, timeout=10)
+        prs = json.loads(response.read().decode('utf-8'))
+
+        if prs:
+            # Return the first PR (should only be one)
+            return prs[0]['html_url']
+
+    except (HTTPError, URLError, json.JSONDecodeError, KeyError, IndexError, Exception) as e:
+        # Commit history API failed, fall back to title-based search
+        pass
+
+    # Fallback: Search for PRs by title (less accurate but still useful)
+    try:
+        from urllib.parse import quote_plus
+
+        query = f'{target_version} in:title repo:openshift/managed-cluster-config is:pr is:merged'
+        api_url = f'https://api.github.com/search/issues?q={quote_plus(query)}&sort=updated&order=desc&per_page=20'
+
+        headers = {'Accept': 'application/vnd.github.v3+json'}
+        gh_token = os.environ.get('GH_TOKEN') or os.environ.get('GITHUB_TOKEN')
+        if gh_token:
+            headers['Authorization'] = f'token {gh_token}'
+
+        req = Request(api_url, headers=headers)
+        response = urlopen(req, timeout=10)
+        data = json.loads(response.read().decode('utf-8'))
+
+        items = data.get('items', [])
+        if items:
+            filename = file_path.split('/')[-1]
+            for item in items:
+                title = item.get('title', '').lower()
+                if target_version in title or filename in title:
+                    return item['html_url']
+            return items[0]['html_url']
+
+    except Exception:
+        pass
+
+    return None
+
+
+def validate_ocp_acknowledgment_structure(baseline, target, gates_exist, ack_file_exists, ack_filename=None):
     """
     Validate OCP acknowledgment directory structure based on gate presence.
 
     Expected behavior:
-    - If gates exist: BOTH config.yaml AND admin-ack.yaml MUST exist
+    - If gates exist: BOTH config.yaml AND (admin-ack.yaml OR admin-gates.yaml) MUST exist
     - If no gates: BOTH files MUST be absent (directory should not exist)
 
     Args:
         baseline: Baseline version
         target: Target version
-        gates_exist: Boolean indicating if gates exist in baseline
-        ack_file_exists: Boolean indicating if admin-ack.yaml exists
-
+        gates_exist: Whether admin gates exist in cluster-version-operator
+        ack_file_exists: Whether acknowledgment file exists
+        ack_filename: The actual acknowledgment filename found (admin-ack.yaml or admin-gates.yaml)
     Returns:
-        dict with validation results
+        dict with validation results and warnings
     """
     target_minor = extract_minor_version(target)
     expected_baseline = calculate_expected_baseline(target_minor)
+
+    # Default to admin-ack.yaml if filename not provided (backwards compatibility)
+    if ack_filename is None:
+        ack_filename = 'admin-ack.yaml'
 
     config_url = f"https://raw.githubusercontent.com/openshift/managed-cluster-config/master/deploy/osd-cluster-acks/ocp/{target_minor}/config.yaml"
 
@@ -112,12 +211,14 @@ def validate_ocp_acknowledgment_structure(baseline, target, gates_exist, ack_fil
         'valid': False,
         'config_exists': False,
         'ack_exists': ack_file_exists,
+        'ack_filename': ack_filename,
         'expected_baseline': expected_baseline,
         'actual_baseline': None,
-        'errors': []
+        'errors': [],
+        'warnings': []
     }
 
-    log_info(f"Validating acknowledgment structure (gates_exist={gates_exist})...")
+    log_info(f"Validating acknowledgment structure (gates_exist={gates_exist}, ack_file={ack_filename})...")
 
     try:
         config_data = fetch_yaml_from_url(config_url)
@@ -129,7 +230,7 @@ def validate_ocp_acknowledgment_structure(baseline, target, gates_exist, ack_fil
             if not config_exists:
                 result['errors'].append(f"config.yaml required but not found at {config_url}")
             if not ack_file_exists:
-                result['errors'].append(f"admin-ack.yaml required but not found")
+                result['errors'].append(f"Acknowledgment file (admin-ack.yaml or admin-gates.yaml) required but not found")
 
             if config_exists and ack_file_exists:
                 # Validate config.yaml content
@@ -144,14 +245,43 @@ def validate_ocp_acknowledgment_structure(baseline, target, gates_exist, ack_fil
             else:
                 result['valid'] = False
         else:
-            # No gates: BOTH files MUST be absent
-            if config_exists:
-                result['errors'].append(f"config.yaml should not exist (no gates in baseline), but found at {config_url}")
-            if ack_file_exists:
-                result['errors'].append(f"admin-ack.yaml should not exist (no gates in baseline)")
+            # No gates: "both or neither" rule
+            # Check acknowledgment file first, then config.yaml
+            if ack_file_exists and config_exists:
+                # Both files present → PASS with WARNING (show PR for acknowledgment file)
+                file_path = f"deploy/osd-cluster-acks/ocp/{target_minor}/{ack_filename}"
+                pr_link = get_pr_link_for_file(file_path, target_minor)
 
-            # Valid if both are absent
-            result['valid'] = not config_exists and not ack_file_exists
+                warning_msg = {
+                    'type': 'orphaned_files',
+                    'message': f'No admin gates found in cluster-version-operator for version {target_minor}, but unexpected {ack_filename} file is present in managed-cluster-config',
+                    'file': file_path,
+                    'pr_link': pr_link,
+                    'version': target_minor
+                }
+                result['warnings'].append(warning_msg)
+                log_warning(f"⚠️  Orphaned files detected: {file_path}")
+                if pr_link:
+                    log_warning(f"   Introduced in PR: {pr_link}")
+
+                # Don't add to errors - this is just a warning
+                result['valid'] = True
+
+            elif ack_file_exists or config_exists:
+                # Only one file present → FAIL
+                if ack_file_exists:
+                    missing_file = 'config.yaml'
+                    present_file = ack_filename
+                else:
+                    missing_file = 'acknowledgment file (admin-ack.yaml or admin-gates.yaml)'
+                    present_file = 'config.yaml'
+
+                result['errors'].append(f'{present_file} exists but {missing_file} is missing (both required when no gates)')
+                result['valid'] = False
+
+            else:
+                # Neither file exists - normal/expected case
+                result['valid'] = True
 
     except Exception as e:
         result['errors'].append(f"Error validating acknowledgment structure: {e}")
@@ -258,50 +388,88 @@ Exit Codes:
         """
     )
 
-    parser.add_argument('--baseline', help='Baseline version (default: auto-detect from latest stable)')
-    parser.add_argument('--target', help='Target version (default: auto-detect from latest candidate)')
+    parser.add_argument('--version', help='Single version to analyze (auto-resolves baseline and target)')
+    parser.add_argument('--baseline', help='Baseline version (requires --target)')
+    parser.add_argument('--target', help='Target version (requires --baseline)')
     parser.add_argument('--verbose', action='store_true', help='Enable verbose logging')
     parser.add_argument('--report-dir',
                        default=os.environ.get('REPORT_DIR', 'reports'),
                        help='Directory to store reports (default: reports/, env: REPORT_DIR)')
+    parser.add_argument('--dry-run', action='store_true',
+                       help='Show versions that would be used and exit (no analysis performed)')
 
     args = parser.parse_args()
 
     # Resolve versions using shared logic
-    baseline_full = resolve_baseline_version(
-        cli_arg=args.baseline,
-        env_var=os.environ.get('BASE_VERSION')
-    )
-    target_full = resolve_target_version(
-        cli_arg=args.target,
-        env_var=os.environ.get('TARGET_VERSION')
-    )
+    # Check for single version resolution first (--version or OPENSHIFT_VERSION)
+    openshift_version = args.version or os.environ.get('OPENSHIFT_VERSION')
+
+    if openshift_version:
+        # Single version auto-resolution
+        log_info(f"Using single version: {openshift_version}")
+        baseline_full, target_full = resolve_openshift_version(openshift_version)
+        if not baseline_full or not target_full:
+            log_error(f"Failed to resolve versions from: {openshift_version}")
+            sys.exit(1)
+    elif args.baseline and args.target:
+        # Explicit baseline and target provided
+        baseline_full = args.baseline
+        target_full = args.target
+    else:
+        # Auto-detect (fallback to individual resolution)
+        from openshift_releases import resolve_baseline_version, resolve_target_version
+        baseline_full = args.baseline or resolve_baseline_version()
+        target_full = args.target or resolve_target_version()
 
     # Extract minor versions (admin gates use minor versions like 4.21, 4.22)
-    baseline = extract_minor_version(baseline_full)
-    target = extract_minor_version(target_full)
+    baseline_minor = extract_minor_version(baseline_full)
+    target_minor = extract_minor_version(target_full)
+
+    # Determine which version to check for acknowledgments
+    # For z-stream upgrades (e.g., 4.19.30 → 4.19.31), validate gates from 4.19 against acks in 4.20
+    # For cross-minor upgrades (e.g., 4.19 → 4.20), validate gates from 4.19 against acks in 4.20
+    if baseline_minor == target_minor:
+        # Z-stream upgrade: check acks in next minor version
+        ack_check_version = get_next_minor_version(baseline_minor)
+        is_zstream = True
+        log_info(f"Z-stream upgrade detected ({baseline_full} → {target_full})")
+    else:
+        # Cross-minor upgrade: check acks in target
+        ack_check_version = target_minor
+        is_zstream = False
 
     # Main execution
     log_info("Starting OCP Admin Gate Acknowledgment Analysis")
     log_info("=" * 60)
-    log_info(f"Baseline version: {baseline_full} (minor: {baseline})")
-    log_info(f"Target version: {target_full} (minor: {target})")
+    log_info(f"Baseline version: {baseline_full} (minor: {baseline_minor})")
+    log_info(f"Target version: {target_full} (minor: {target_minor})")
+    if is_zstream:
+        log_info(f"Acknowledgment check version: {ack_check_version} (next minor for z-stream)")
     log_info("=" * 60)
+
+    # Exit early if dry-run
+    if args.dry_run:
+        log_info("")
+        log_info("Dry-run mode enabled - exiting without performing analysis")
+        sys.exit(0)
 
     try:
         # Fetch admin gates from baseline version
-        baseline_gates = fetch_admin_gates(baseline)
+        log_info(f"\nFetching admin gates from cluster-version-operator for version {baseline_minor}...")
+        baseline_gates = fetch_admin_gates(baseline_minor)
 
-        # Fetch admin acknowledgments from target version
-        target_acks = fetch_admin_acks(target)
+        # Fetch admin acknowledgments from ack_check_version
+        log_info(f"Fetching admin acknowledgments from managed-cluster-config for version {ack_check_version}...")
+        target_acks, ack_filename = fetch_admin_acks(ack_check_version)
 
         # Analyze acknowledgments
         log_info("\nAnalyzing gate acknowledgments...")
-        analysis = analyze_gate_acknowledgments(baseline, target, baseline_gates, target_acks)
+        log_info(f"Validating gates from {baseline_minor} against acknowledgments in {ack_check_version}")
+        analysis = analyze_gate_acknowledgments(baseline_minor, ack_check_version, baseline_gates, target_acks)
 
         # Print results with CHECK #5
         log_info("\nCHECK #5: OCP Admin Gate Acknowledgments")
-        print_analysis(analysis, baseline, target)
+        print_analysis(analysis, baseline_minor, ack_check_version)
 
         # Validate acknowledgment structure based on gate presence
         log_info("\nValidating acknowledgment structure...")
@@ -310,12 +478,13 @@ Exit Codes:
         ack_file_exists = target_acks is not None
 
         structure_validation = validate_ocp_acknowledgment_structure(
-            baseline, target, gates_exist, ack_file_exists
+            baseline_minor, ack_check_version, gates_exist, ack_file_exists, ack_filename
         )
 
         if structure_validation['valid']:
             if gates_exist:
-                log_success(f"✓ Acknowledgment structure valid: config.yaml and admin-ack.yaml present")
+                ack_file = structure_validation.get('ack_filename', 'admin-ack.yaml')
+                log_success(f"✓ Acknowledgment structure valid: config.yaml and {ack_file} present")
                 log_success(f"✓ config.yaml baseline version {structure_validation['actual_baseline']} matches expected")
             else:
                 log_success(f"✓ Acknowledgment structure valid: no gates, directory correctly absent")
@@ -349,8 +518,10 @@ Exit Codes:
 
         report_data = {
             'type': 'OCP Admin Gate Acknowledgment Analysis',
-            'baseline': baseline,
-            'target': target,
+            'baseline': baseline_minor,
+            'target': target_minor,
+            'ack_check_version': ack_check_version,
+            'is_zstream': is_zstream,
             'baseline_full': baseline_full,
             'target_full': target_full,
             'timestamp': datetime.now().isoformat(),
@@ -366,11 +537,12 @@ Exit Codes:
                 'upgrade_ready': upgrade_ready
             },
             'baseline_gates': baseline_gates or {},
-            'target_acks': target_acks or {}
+            'target_acks': target_acks or {},
+            'warnings': structure_validation.get('warnings', [])
         }
 
         # Always generate JSON report (needed for combined report)
-        json_file = os.path.join(report_dir, f"gap-analysis-ocp-gate-ack_{baseline}_to_{target}_{timestamp}.json")
+        json_file = os.path.join(report_dir, f"gap-analysis-ocp-gate-ack_{baseline_minor}_to_{ack_check_version}_{timestamp}.json")
         generate_json_report(report_data, json_file)
         log_info(f"JSON report generated: {json_file}")
 
@@ -379,13 +551,12 @@ Exit Codes:
             log_info("Skipping HTML reports (full report will be generated)")
         else:
             # Generate HTML report
-            html_file = os.path.join(report_dir, f"gap-analysis-ocp-gate-ack_{baseline}_to_{target}_{timestamp}.html")
+            html_file = os.path.join(report_dir, f"gap-analysis-ocp-gate-ack_{baseline_minor}_to_{ack_check_version}_{timestamp}.html")
             generate_html_report(report_data, html_file)
             log_info(f"HTML report generated: {html_file}")
 
         # Exit based on validation result
-        target_minor = extract_minor_version(target)
-        mcc_ocp_ack_url = f"https://github.com/openshift/managed-cluster-config/tree/master/deploy/osd-cluster-acks/ocp/{target_minor}"
+        mcc_ocp_ack_url = f"https://github.com/openshift/managed-cluster-config/tree/master/deploy/osd-cluster-acks/ocp/{ack_check_version}"
 
         if validation_result == 'FAIL':
             log_error("=" * 60)
