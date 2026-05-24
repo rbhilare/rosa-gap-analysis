@@ -66,6 +66,8 @@ Claude follows an impact-based approach in this repository:
 # Single version auto-resolve (RECOMMENDED)
 ./scripts/gap-all.sh --version 4.21  # GA: z-stream comparison
 ./scripts/gap-all.sh --version 4.22  # Pre-GA: cross-minor
+./scripts/gap-all.sh --version 5.0   # 5.x: 4.22 → 5.0 (special mapping)
+./scripts/gap-all.sh --version 5.1   # 5.x: 4.23 → 5.1 (special mapping)
 OPENSHIFT_VERSION=4.22 ./scripts/gap-all.sh
 
 # Explicit versions (both required)
@@ -78,7 +80,8 @@ OPENSHIFT_VERSION=4.22 ./scripts/gap-all.sh
 # Test against nightly
 BASE_VERSION=4.21 TARGET_VERSION=NIGHTLY ./scripts/gap-all.sh
 
-# Individual analysis
+# Individual analysis (examples)
+python3 ./scripts/gap-aws-sts.py --version 4.22
 python3 ./scripts/gap-aws-sts.py --baseline 4.21 --target 4.22
 
 # Container testing
@@ -104,8 +107,8 @@ export GH_TOKEN="..." && ./ci/prow-autofix.sh
 | **2** | gap-aws-sts.py | AWS acknowledgment files in `deploy/osd-cluster-acks/sts/{version}/` | Yes |
 | **3** | gap-gcp-wif.py | GCP WIF templates in `resources/wif/{version}/` match OCP release (per-file comparison) | Yes |
 | **4** | gap-gcp-wif.py | GCP acknowledgment files in `deploy/osd-cluster-acks/wif/{version}/` | Yes |
-| **5** | gap-ocp-gate-ack.py | OCP admin gate acknowledgments in `deploy/osd-cluster-acks/ocp/{version}/` (conditional: if gates exist, both config.yaml + admin-ack.yaml required; if no gates, both files must be absent) | Yes |
-| **6** | gap-feature-gates.py | Feature gate changes (informational) | No |
+| **5** | gap-ocp-gate-ack.py | OCP admin gate acknowledgments in `deploy/osd-cluster-acks/ocp/{version}/` (conditional: if gates exist, both config.yaml + acknowledgment file required; if no gates, both files must be absent OR both files present with warning). **Acknowledgment file**: admin-ack.yaml OR admin-gates.yaml (either acceptable). **Check order**: acknowledgment file first, then config.yaml. If only one file present when no gates exist, validation fails. **Z-stream behavior**: For z-stream upgrades (e.g., 4.19.30 → 4.19.31), validates gates from 4.19 against acknowledgments in 4.20 (next minor) to detect if a z-stream adds a new gate. | Yes |
+| **6** | gap-feature-gates.py | Feature gate changes (informational). **Z-stream behavior**: When comparing z-stream versions (e.g., 4.21.15 → 4.21.16), shows default feature gates instead of differences. | No |
 
 **Expected baseline**: For target X.Y, baseline is X.(Y-1). Example: 4.22 expects 4.21 baseline.
 
@@ -117,19 +120,21 @@ export GH_TOKEN="..." && ./ci/prow-autofix.sh
 
 **Version resolution (openshift_releases.py/sh):**
 - **API endpoint**: Uses `/api/v1/releasestreams/accepted` (single call for both 4-stable and 4-dev-preview)
-- **Baseline**: Latest GA version line (e.g., 4.21.x) from 4-stable accepted stream, filtered by GA version from Sippy API
-- **Target**: GA+1 version (e.g., 4.22.x) - first checks 4-stable for RC (4.22.0-rc.*), falls back to 4-dev-preview for EC (4.22.0-ec.*)
-- **CLI/ENV resolution**: Minor versions (e.g., `--baseline 4.21 --target 4.22`) are resolved the same way as auto-detect (4.21 → 4.21.11, 4.22 → 4.22.0-rc.0); full versions (e.g., `4.21.7`, `4.22.0-rc.0`) are used as-is
-- **Single version resolution (NEW)**: `--version` flag or `OPENSHIFT_VERSION` env var auto-resolves baseline and target:
+- **Single version resolution (RECOMMENDED)**: `--version` flag or `OPENSHIFT_VERSION` env var auto-resolves baseline and target:
   - **Baseline precedence**: stable > candidate (RC/EC) > CI > nightly
   - **Target precedence**: candidate (RC/EC) > CI > nightly
   - **GA or older** (version ≤ GA): z-stream comparison (e.g., `--version 4.21` → BASE=4.21.14, TARGET=4.21.15, both stable)
   - **Pre-GA in 4-dev-preview** (e.g., 4.22): cross-minor comparison (e.g., `--version 4.22` → BASE=4.21.15 stable, TARGET=4.22.0-rc.3 candidate if available, else CI/nightly)
-  - **Other releases** (e.g., 4.23, 5.0): cross-minor comparison (e.g., `--version 4.23` → BASE=4.22.0-rc.3 candidate, TARGET=4.23.0-rc.0 candidate if available, else CI/nightly; `--version 5.0` → BASE=4.23.0-0.ci, TARGET=5.0.0-rc.0 candidate if available, else CI/nightly)
+  - **Other 4.x releases** (e.g., 4.23): cross-minor comparison (e.g., `--version 4.23` → BASE=4.22.0-rc.3 candidate, TARGET=4.23.0-rc.0 candidate if available, else CI/nightly)
+  - **OpenShift 5.x special mappings** (major version transition from 4.x):
+    - `--version 5.0` → BASE=4.22.x (latest stable), TARGET=5.0.0-rc.x (reflects 4.22 → 5.0 upgrade path)
+    - `--version 5.1` → BASE=4.23.x (latest candidate), TARGET=5.1.0-rc.x (reflects 4.23 → 5.1 upgrade path)
+    - `--version 5.2+` → BASE=5.(x-1) (normal progression, e.g., 5.1.x → 5.2.0-rc.x)
   - Uses sorted Sippy releases to find previous version; baseline prefers stable, target prefers candidate
+- **Explicit versions**: `--baseline` AND `--target` (both required); minor versions (e.g., `--baseline 4.21 --target 4.22`) are resolved the same way as auto-detect (4.21 → 4.21.11, 4.22 → 4.22.0-rc.0); full versions (e.g., `4.21.7`, `4.22.0-rc.0`) are used as-is
 - **Precedence**: `--version` > `OPENSHIFT_VERSION` > `--baseline` AND `--target` (both required) > `BASE_VERSION` AND `TARGET_VERSION` (both required) > auto-detect
 - **Validation**: `--baseline` or `--target` cannot be used individually; both must be specified together, OR use `--version` for single-version auto-resolution
-- Auto-detect: queries Sippy API for GA version (e.g., 4.21), then filters accepted streams
+- Auto-detect (no args): queries Sippy API for GA version (e.g., 4.21), resolves to latest stable → latest candidate
 - Keywords: `NIGHTLY` → latest dev nightly, `CANDIDATE` → latest dev candidate (RC from stable or EC from dev-preview)
 - Minor version normalization: `4.21.7` → `4.21` for feature gates API
 - **Quick version queries**: See README.md Quick Reference for curl commands to query accepted streams
@@ -151,7 +156,7 @@ export GH_TOKEN="..." && ./ci/prow-autofix.sh
 ```python
 sys.path.insert(0, str(Path(__file__).parent / 'lib'))
 from common import log_info, log_success, log_error
-from openshift_releases import resolve_baseline_version, resolve_target_version
+from openshift_releases import resolve_openshift_version, extract_minor_version
 from reporters import generate_html_report, generate_json_report
 ```
 

@@ -14,7 +14,7 @@ sys.path.insert(0, str(Path(__file__).parent / 'lib'))
 
 from reporters import generate_html_report, generate_json_report
 from common import log_info, log_success
-from openshift_releases import extract_minor_version
+from openshift_releases import extract_minor_version, get_next_minor_version
 
 
 def find_latest_reports(baseline, target, report_dir='reports'):
@@ -47,10 +47,23 @@ def find_latest_reports(baseline, target, report_dir='reports'):
         reports['feature_gates'] = fg_files[-1]  # Latest
 
     # Find OCP Gate Acknowledgment report (uses minor versions)
-    oga_pattern = os.path.join(report_dir, f"gap-analysis-ocp-gate-ack_{baseline_minor}_to_{target_minor}_*.json")
-    oga_files = sorted(glob.glob(oga_pattern))
+    # For z-stream upgrades, OCP gate ack uses next minor version for ack_check_version
+    # Try both patterns and pick the latest by timestamp
+    oga_files = []
+
+    # Pattern 1: standard (baseline_to_target)
+    oga_pattern1 = os.path.join(report_dir, f"gap-analysis-ocp-gate-ack_{baseline_minor}_to_{target_minor}_*.json")
+    oga_files.extend(glob.glob(oga_pattern1))
+
+    # Pattern 2: z-stream (baseline_to_next) - only for z-stream upgrades
+    if baseline_minor == target_minor:
+        next_minor = get_next_minor_version(baseline_minor)
+        oga_pattern2 = os.path.join(report_dir, f"gap-analysis-ocp-gate-ack_{baseline_minor}_to_{next_minor}_*.json")
+        oga_files.extend(glob.glob(oga_pattern2))
+
+    # Sort all found files and pick the latest
     if oga_files:
-        reports['ocp_gate_ack'] = oga_files[-1]  # Latest
+        reports['ocp_gate_ack'] = sorted(oga_files)[-1]  # Latest by filename (timestamp)
 
     return reports
 

@@ -163,6 +163,24 @@ def extract_minor_version(version_string):
     return version_string
 
 
+def get_next_minor_version(version_string):
+    """
+    Get next minor version (e.g., '4.19' → '4.20', '4.21' → '4.22').
+
+    Args:
+        version_string: Version string (e.g., '4.19', '4.19.30', '4.21.5')
+
+    Returns:
+        str: Next minor version (e.g., '4.20')
+    """
+    minor = extract_minor_version(version_string)
+    parts = minor.split('.')
+    if len(parts) >= 2:
+        next_minor_num = int(parts[1]) + 1
+        return f"{parts[0]}.{next_minor_num}"
+    return version_string
+
+
 def get_all_minor_versions_from_accepted_streams():
     """
     Get all unique minor versions from accepted streams, sorted.
@@ -355,6 +373,31 @@ def get_latest_version_for_line(minor_version):
     return get_latest_version_baseline_priority(minor_version)
 
 
+def get_special_baseline_mapping(target_version):
+    """
+    Get special baseline version mapping for major version transitions.
+
+    OpenShift upgrade path mapping:
+    - 4.19 → 4.20 → 4.21 → 4.22 → 4.23 (continues)
+    - 4.22 → 5.0 (first major bump)
+    - 4.23 → 5.1 (second major bump)
+    - 5.1 → 5.2 → 5.3 → ... (normal progression)
+
+    Args:
+        target_version: Target minor version (e.g., "5.0", "5.1")
+
+    Returns:
+        str: Special baseline version if mapping exists, None otherwise
+    """
+    # Special mappings for 5.x transition
+    special_mappings = {
+        "5.0": "4.22",
+        "5.1": "4.23"
+    }
+
+    return special_mappings.get(target_version)
+
+
 def resolve_openshift_version(openshift_version):
     """
     Resolve baseline and target versions from a single OPENSHIFT_VERSION.
@@ -369,8 +412,12 @@ def resolve_openshift_version(openshift_version):
       - TARGET = latest candidate/nightly for version
       - Example: 4.22 → BASE=4.21.15, TARGET=4.22.0-rc.3
 
+    Special version mappings for major transitions:
+      - 5.0 → BASE=4.22.x (not 4.23)
+      - 5.1 → BASE=4.23.x (not 5.0)
+
     Args:
-        openshift_version: Version to resolve (e.g., "4.21", "4.22")
+        openshift_version: Version to resolve (e.g., "4.21", "4.22", "5.0")
 
     Returns:
         tuple: (baseline_version, target_version)
@@ -425,18 +472,25 @@ def resolve_openshift_version(openshift_version):
         # Pre-GA version → cross-minor comparison
         log_info(f"Version {openshift_version} is pre-GA (GA={ga_version}), using cross-minor comparison")
 
-        # Find previous version in sorted list
-        try:
-            idx = all_minor_versions.index(openshift_version)
-            if idx == 0:
-                log_error(f"Cannot find previous version for {openshift_version} (first in sorted list)")
-                sys.exit(1)
-            previous_version = all_minor_versions[idx - 1]
-        except ValueError:
-            log_error(f"Version {openshift_version} not found in accepted streams")
-            sys.exit(1)
+        # Check for special baseline mapping first (e.g., 5.0 → 4.22, 5.1 → 4.23)
+        special_baseline = get_special_baseline_mapping(openshift_version)
 
-        log_info(f"Previous version in sorted list: {previous_version}")
+        if special_baseline:
+            log_info(f"Using special baseline mapping: {openshift_version} → {special_baseline}")
+            previous_version = special_baseline
+        else:
+            # Find previous version in sorted list
+            try:
+                idx = all_minor_versions.index(openshift_version)
+                if idx == 0:
+                    log_error(f"Cannot find previous version for {openshift_version} (first in sorted list)")
+                    sys.exit(1)
+                previous_version = all_minor_versions[idx - 1]
+            except ValueError:
+                log_error(f"Version {openshift_version} not found in accepted streams")
+                sys.exit(1)
+
+            log_info(f"Previous version in sorted list: {previous_version}")
 
         # Check if previous version is GA or pre-GA
         prev_parts = previous_version.split('.')

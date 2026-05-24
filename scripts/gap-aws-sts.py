@@ -13,7 +13,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent / 'lib'))
 
 from common import log_info, log_success, log_error, log_warning, check_command
-from openshift_releases import resolve_baseline_version, resolve_target_version, extract_minor_version
+from openshift_releases import resolve_openshift_version, extract_minor_version
 from reporters import generate_html_report, generate_json_report
 from ack_validation import (
     fetch_yaml_from_url,
@@ -431,24 +431,38 @@ Exit Codes:
         """
     )
 
-    parser.add_argument('--baseline', help='Baseline version (default: auto-detect from latest stable)')
-    parser.add_argument('--target', help='Target version (default: auto-detect from latest candidate)')
+    parser.add_argument('--version', help='Single version to analyze (auto-resolves baseline and target)')
+    parser.add_argument('--baseline', help='Baseline version (requires --target)')
+    parser.add_argument('--target', help='Target version (requires --baseline)')
     parser.add_argument('--verbose', action='store_true', help='Enable verbose logging')
     parser.add_argument('--report-dir',
                        default=os.environ.get('REPORT_DIR', 'reports'),
                        help='Directory to store reports (default: reports/, env: REPORT_DIR)')
+    parser.add_argument('--dry-run', action='store_true',
+                       help='Show versions that would be used and exit (no analysis performed)')
 
     args = parser.parse_args()
 
     # Resolve versions using shared logic
-    baseline = resolve_baseline_version(
-        cli_arg=args.baseline,
-        env_var=os.environ.get('BASE_VERSION')
-    )
-    target = resolve_target_version(
-        cli_arg=args.target,
-        env_var=os.environ.get('TARGET_VERSION')
-    )
+    # Check for single version resolution first (--version or OPENSHIFT_VERSION)
+    openshift_version = args.version or os.environ.get('OPENSHIFT_VERSION')
+
+    if openshift_version:
+        # Single version auto-resolution
+        log_info(f"Using single version: {openshift_version}")
+        baseline, target = resolve_openshift_version(openshift_version)
+        if not baseline or not target:
+            log_error(f"Failed to resolve versions from: {openshift_version}")
+            sys.exit(1)
+    elif args.baseline and args.target:
+        # Explicit baseline and target provided
+        baseline = args.baseline
+        target = args.target
+    else:
+        # Auto-detect (fallback to individual resolution)
+        from openshift_releases import resolve_baseline_version, resolve_target_version
+        baseline = args.baseline or resolve_baseline_version()
+        target = args.target or resolve_target_version()
 
     # Main execution
     log_info("Starting AWS STS Policy Gap Analysis")
@@ -456,6 +470,12 @@ Exit Codes:
     log_info(f"Baseline version: {baseline}")
     log_info(f"Target version: {target}")
     log_info("=========================================")
+
+    # Exit early if dry-run
+    if args.dry_run:
+        log_info("")
+        log_info("Dry-run mode enabled - exiting without performing analysis")
+        sys.exit(0)
 
     # Check prerequisites
     check_command('oc')

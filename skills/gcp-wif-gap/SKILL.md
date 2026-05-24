@@ -36,42 +36,41 @@ Analyze differences in GCP Workload Identity Federation policies between OpenShi
 
 ## Script Usage
 
-**Auto-detect versions (recommended):**
+**Single version (recommended):**
 ```bash
-# Compares latest stable → latest candidate
-python3 ./scripts/gap-gcp-wif.py
+# Auto-resolves baseline and target
+python3 ./scripts/gap-gcp-wif.py --version 4.22
 
-# Use nightly as target
-TARGET_VERSION=NIGHTLY python3 ./scripts/gap-gcp-wif.py
+# Using environment variable
+OPENSHIFT_VERSION=4.22 python3 ./scripts/gap-gcp-wif.py
+
+# 5.x versions (special baseline mapping)
+python3 ./scripts/gap-gcp-wif.py --version 5.0   # 4.22 → 5.0
+OPENSHIFT_VERSION=5.1 python3 ./scripts/gap-gcp-wif.py  # 4.23 → 5.1
 
 # Custom report directory
-python3 ./scripts/gap-gcp-wif.py --report-dir /custom/reports
+python3 ./scripts/gap-gcp-wif.py --version 4.22 --report-dir /custom/reports
 ```
 
-**Explicit versions:**
+**Explicit baseline and target:**
 ```bash
 python3 ./scripts/gap-gcp-wif.py \
   --baseline <version> \
   --target <version> \
   [--report-dir <path>] \
   [--verbose]
+
+# Examples
+python3 ./scripts/gap-gcp-wif.py --baseline 4.21.6 --target 4.22.0-ec.3
+python3 ./scripts/gap-gcp-wif.py --baseline 4.21 --target 4.22
 ```
 
-**Examples:**
+**Auto-detect (no arguments):**
 ```bash
-# Auto-detect
+# Compares latest stable → latest candidate
 python3 ./scripts/gap-gcp-wif.py
 
-# Explicit versions
-python3 ./scripts/gap-gcp-wif.py --baseline 4.21 --target 4.22 --verbose
-
-# Full version strings
-python3 ./scripts/gap-gcp-wif.py --baseline 4.21.6 --target 4.22.0-ec.3
-
-# Environment variables
-BASE_VERSION=4.21.5 TARGET_VERSION=4.22.0-ec.2 python3 ./scripts/gap-gcp-wif.py
-
-# Use nightly
+# Use nightly as target
 TARGET_VERSION=NIGHTLY python3 ./scripts/gap-gcp-wif.py
 
 # Custom report location
@@ -89,7 +88,7 @@ reports/gap-analysis-gcp-wif_4.21_to_4.22_20260325_120000.json  # JSON
 - `1`: Validation FAILED (CHECK #3 or CHECK #4 failed) OR execution failure (e.g., missing tools, network errors, invalid versions)
 
 **Version Resolution:**
-- CLI flags > Environment variables > Auto-detect
+- `--version` flag > `OPENSHIFT_VERSION` env var > `--baseline` AND `--target` (both required) > `BASE_VERSION` AND `TARGET_VERSION` (both required) > Auto-detect
 - Auto-detect: latest stable (baseline) → latest candidate (target)
 - Special keywords: `TARGET_VERSION=NIGHTLY` or `TARGET_VERSION=CANDIDATE`
 

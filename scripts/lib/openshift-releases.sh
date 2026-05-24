@@ -796,6 +796,32 @@ get_latest_version_for_line() {
 }
 
 # Resolve BASE and TARGET versions from a single OPENSHIFT_VERSION
+# Get special baseline version mapping for major version transitions
+# Usage: get_special_baseline_mapping "5.0"
+# Returns: Special baseline version if exists, empty string otherwise
+# Exit: 0 always
+get_special_baseline_mapping() {
+    local target_version="$1"
+
+    # Special mappings for 5.x transition
+    # OpenShift upgrade path:
+    # - 4.19 → 4.20 → 4.21 → 4.22 → 4.23 (continues)
+    # - 4.22 → 5.0 (first major bump)
+    # - 4.23 → 5.1 (second major bump)
+    # - 5.1 → 5.2 → 5.3 → ... (normal progression)
+    case "$target_version" in
+        "5.0")
+            echo "4.22"
+            ;;
+        "5.1")
+            echo "4.23"
+            ;;
+        *)
+            echo ""
+            ;;
+    esac
+}
+
 # Usage: resolve_openshift_version "4.23"
 # Returns: Two values on stdout: BASE_VERSION TARGET_VERSION (space-separated)
 # Exit: 0 on success (or skip scenario), 1 on failure
@@ -892,20 +918,32 @@ resolve_openshift_version() {
             log_info "Version ${openshift_version} is pre-GA (GA=${ga_version}), using cross-minor comparison"
         fi
 
-        # Find previous version in sorted list
-        previous_version=$(echo "$all_minor_versions" | grep -B1 "^${openshift_version}$" | head -1)
+        # Check for special baseline mapping first (e.g., 5.0 → 4.22, 5.1 → 4.23)
+        local special_baseline
+        special_baseline=$(get_special_baseline_mapping "$openshift_version")
 
-        if [[ -z "$previous_version" ]] || [[ "$previous_version" == "$openshift_version" ]]; then
-            if command -v log_error &>/dev/null; then
-                log_error "Cannot find previous version for ${openshift_version} in sorted list"
-            else
-                echo "Error: Cannot find previous version for ${openshift_version}" >&2
+        if [[ -n "$special_baseline" ]]; then
+            # Use special baseline mapping
+            previous_version="$special_baseline"
+            if command -v log_info &>/dev/null; then
+                log_info "Using special baseline mapping: ${openshift_version} → ${special_baseline}"
             fi
-            return 1
-        fi
+        else
+            # Find previous version in sorted list
+            previous_version=$(echo "$all_minor_versions" | grep -B1 "^${openshift_version}$" | head -1)
 
-        if command -v log_info &>/dev/null; then
-            log_info "Previous version in sorted list: ${previous_version}"
+            if [[ -z "$previous_version" ]] || [[ "$previous_version" == "$openshift_version" ]]; then
+                if command -v log_error &>/dev/null; then
+                    log_error "Cannot find previous version for ${openshift_version} in sorted list"
+                else
+                    echo "Error: Cannot find previous version for ${openshift_version}" >&2
+                fi
+                return 1
+            fi
+
+            if command -v log_info &>/dev/null; then
+                log_info "Previous version in sorted list: ${previous_version}"
+            fi
         fi
 
         # Check if previous version is GA or pre-GA
@@ -976,6 +1014,7 @@ export -f get_latest_dev_nightly_pullspec
 export -f get_all_minor_versions_from_accepted_streams
 export -f get_previous_z_stream_version
 export -f get_latest_version_for_line
+export -f get_special_baseline_mapping
 export -f resolve_openshift_version
 
 # If script is executed directly (not sourced), provide CLI interface

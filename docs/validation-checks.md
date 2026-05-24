@@ -13,7 +13,7 @@ All scripts use a consistent global check numbering system:
 | **3** | GCP WIF Resources | Validates WIF template (vanilla.yaml) in [managed-cluster-config](https://github.com/openshift/managed-cluster-config) `resources/wif/{version}/` and matches OCP release changes (per-file comparison) | Exit code 1 on FAIL |
 | **4** | GCP WIF Admin Ack | Validates admin acknowledgment files in [managed-cluster-config](https://github.com/openshift/managed-cluster-config) `deploy/osd-cluster-acks/wif/{version}/` | Exit code 1 on FAIL |
 | **5** | OCP Admin Gates | Validates admin gates from cluster-version-operator are acknowledged in [managed-cluster-config](https://github.com/openshift/managed-cluster-config) `deploy/osd-cluster-acks/ocp/{version}/` (conditional: if gates exist, both files required; if no gates, both files must be absent) | Exit code 1 on FAIL |
-| **6** | Feature Gates | Analyzes feature gate changes from Sippy API (informational only) | Always PASS (exit code 0) |
+| **6** | Feature Gates | Analyzes feature gate changes from Sippy API. **Z-stream behavior:** When comparing z-stream versions (e.g., 4.21.15 → 4.21.16), shows default feature gates instead of differences, as z-stream updates should not change feature gates (informational only) | Always PASS (exit code 0) |
 
 ## Check Execution by Script
 
@@ -178,6 +178,13 @@ UNEXPECTED: Actions added in managed-cluster-config (not in OCP release):
 - All required gates are acknowledged when gates exist
 - `config.yaml` and `admin-ack.yaml` are present together or absent together
 
+**Z-stream vs Cross-minor Behavior:**
+- **Z-stream upgrade** (e.g., 4.19.30 → 4.19.31): Gates from 4.19 are validated against acknowledgments in 4.20 (next minor)
+  - Purpose: Detect if a z-stream adds a new gate that isn't acknowledged in the next minor version
+  - Example: `OPENSHIFT_VERSION=4.19` validates gates in 4.19 against acks in 4.20
+- **Cross-minor upgrade** (e.g., 4.19 → 4.20): Gates from 4.19 are validated against acknowledgments in 4.20
+  - Standard validation: gates in version X must be acknowledged in version X+1
+
 **Conditional validation logic:**
 - **If gates exist in baseline**: BOTH `config.yaml` AND `admin-ack.yaml` MUST be present in target, all gates must be acknowledged
 - **If no gates in baseline**: BOTH files MUST be absent (directory should not exist)
@@ -192,6 +199,29 @@ UNEXPECTED: Actions added in managed-cluster-config (not in OCP release):
 - **No gates scenario**: Both `config.yaml` and `admin-ack.yaml` are absent
 - **Gates exist scenario**: Both files present, all gates acknowledged, config.yaml has correct baseline version
 
+**Orphaned Acknowledgment Files:**
+
+When no admin gates exist in cluster-version-operator, acknowledgment files use a "both or neither" validation rule:
+
+**Acknowledgment File Names:** Either `admin-ack.yaml` OR `admin-gates.yaml` is acceptable (script checks for both).
+
+**Validation Rules (when no gates exist):**
+- **Both files present** (acknowledgment file + config.yaml): **WARNING** with PR link (exit 0)
+- **Only one file present**: **FAIL** - both files required together (exit 1)
+- **Neither file present**: **PASS** - normal expected state (exit 0)
+
+**Check order:** Acknowledgment file (admin-ack.yaml or admin-gates.yaml) is checked first, then config.yaml.
+
+**Example Warning (both files present, no gates):**
+```
+⚠️ Warnings
+- No admin gates found in cluster-version-operator for version 4.21, but unexpected admin-ack.yaml file is present in managed-cluster-config
+  File: deploy/osd-cluster-acks/ocp/4.21/admin-ack.yaml
+  Introduced in: https://github.com/openshift/managed-cluster-config/pull/2657
+```
+
+**PR Detection:** Uses commit history API to find the exact PR that added the admin-ack.yaml file, providing accurate attribution rather than title-based keyword matching.
+
 ### Check 6: Feature Gates
 
 **What it analyzes:**
@@ -203,23 +233,98 @@ UNEXPECTED: Actions added in managed-cluster-config (not in OCP release):
 **Data source:**
 - Sippy API: `https://sippy.dptools.openshift.org/api/feature_gates?release={version}`
 
+**Z-stream display behavior:**
+- For z-stream comparisons (e.g., 4.21.15 → 4.21.16), the HTML report displays default feature gates in a collapsible drop-down list to improve readability
+- The summary shows "📋 View all N Default:Hypershift gates (click to expand)"
+- This helps distinguish informational gate listings from actual changes
+
 **Pass criteria:**
 - Always PASS (informational only)
 - Analysis completes successfully
 - Changes are tracked but do not affect exit code
 
+## Version Resolution
+
+### OpenShift 5.x Major Version Mapping
+
+Starting with OpenShift 5.0, the framework supports special version mappings to handle the major version transition from 4.x to 5.x:
+
+**Upgrade Paths:**
+- 4.19 → 4.20 → 4.21 → 4.22 → 4.23 (continues in 4.x line)
+- 4.22 → 5.0 (first major bump to 5.x)
+- 4.23 → 5.1 (second path to 5.x)
+- 5.1 → 5.2 → 5.3 → ... (normal 5.x progression)
+
+**Special Baseline Mappings:**
+
+When using `--version` or `OPENSHIFT_VERSION` with 5.x versions, the framework automatically maps to the correct 4.x baseline:
+
+| Target Version | Baseline Resolution | Example |
+|---------------|---------------------|---------|
+| `5.0` | 4.22.x (latest stable) | BASE=4.22.15, TARGET=5.0.0-rc.0 |
+| `5.1` | 4.23.x (latest candidate) | BASE=4.23.0-rc.1, TARGET=5.1.0-rc.0 |
+| `5.2+` | 5.(x-1) (normal progression) | BASE=5.1.5, TARGET=5.2.0-rc.0 |
+
+**Usage Examples:**
+
+**Python:**
+```bash
+# Compare 4.22 → 5.0 (first major bump)
+python3 ./scripts/gap-aws-sts.py --version 5.0
+# Resolves to: baseline=4.22.15, target=5.0.0-rc.0
+
+# Compare 4.23 → 5.1 (second path to 5.x)
+python3 ./scripts/gap-gcp-wif.py --version 5.1
+# Resolves to: baseline=4.23.0-rc.1, target=5.1.0-rc.0
+
+# Compare 5.1 → 5.2 (normal 5.x progression)
+python3 ./scripts/gap-feature-gates.py --version 5.2
+# Resolves to: baseline=5.1.5, target=5.2.0-rc.0
+```
+
+**Bash:**
+```bash
+# Using OPENSHIFT_VERSION environment variable
+OPENSHIFT_VERSION=5.0 ./scripts/gap-all.sh
+# Resolves to: BASE=4.22.15, TARGET=5.0.0-rc.0
+
+OPENSHIFT_VERSION=5.1 ./scripts/gap-all.sh
+# Resolves to: BASE=4.23.0-rc.1, TARGET=5.1.0-rc.0
+
+# Using --version flag
+./scripts/gap-all.sh --version 5.0  # Same as above
+./scripts/gap-all.sh --version 5.1
+```
+
+**Why This Mapping Exists:**
+
+The special mappings for 5.0 and 5.1 reflect the actual OpenShift upgrade paths during the major version transition:
+- Clusters on 4.22 can upgrade to 5.0
+- Clusters on 4.23 can upgrade to 5.1
+- Starting with 5.2, upgrades follow normal sequential progression (5.1 → 5.2)
+
+**Explicit Version Override:**
+
+You can always override the automatic mapping by specifying both baseline and target explicitly:
+
+```bash
+# Override automatic mapping
+./scripts/gap-all.sh --baseline 4.21 --target 5.0
+python3 ./scripts/gap-aws-sts.py --baseline 4.23 --target 5.0
+```
+
 ## Exit Codes
 
 ### Individual Scripts (gap-aws-sts.py, gap-gcp-wif.py, gap-ocp-gate-ack.py)
-- **Exit 0 (PASS):** All relevant checks passed
+- **Exit 0 (PASS):** All relevant checks passed OR dry-run mode
 - **Exit 1 (FAIL):** One or more checks failed OR execution error
 
 ### Feature Gates Script (gap-feature-gates.py)
-- **Exit 0 (PASS):** Always (informational only)
+- **Exit 0 (PASS):** Always (informational only) OR dry-run mode
 - **Exit 1 (FAIL):** Only on execution error (network, invalid version, etc.)
 
 ### Combined Script (gap-all.sh)
-- **Exit 0 (PASS):** All checks 1-5 passed (check 6 is informational)
+- **Exit 0 (PASS):** All checks 1-5 passed (check 6 is informational) OR dry-run mode
 - **Exit 1 (FAIL):** Any of checks 1-5 failed OR execution error
 
 ## CI/CD Integration

@@ -17,6 +17,7 @@ VERSION=""
 VERBOSE=false
 DRY_RUN=false
 REPORT_DIR="${REPORT_DIR:-reports}"
+STEPS=""
 
 usage() {
     cat <<EOF
@@ -30,6 +31,9 @@ Optional Arguments:
   --baseline <version>     Baseline version (must be used with --target)
   --target <version>       Target version (must be used with --baseline)
   --version <version>      Single version to analyze (auto-resolves baseline and target)
+  --steps <steps>          Comma-separated list of steps to run (default: all)
+                           Available: aws,gcp,ocp,feature-gates
+                           Example: --steps aws,gcp (runs only AWS and GCP)
   --dry-run                Show resolved versions and exit without running analysis
   --verbose                Enable verbose logging
   --report-dir <path>      Directory to store reports (default: reports/)
@@ -78,6 +82,11 @@ Examples:
   $0 --baseline 4.21 --target 4.22
   $0 --baseline 4.21.6 --target 4.22.0-ec.3 --verbose
 
+  # Run specific steps only
+  $0 --version 4.22 --steps aws,gcp         # Only AWS and GCP
+  $0 --baseline 4.21 --target 4.22 --steps aws  # Only AWS
+  $0 --steps feature-gates                  # Only Feature Gates (auto-detect versions)
+
   # Dry-run mode (show versions without running analysis)
   $0 --version 4.21 --dry-run
   $0 --baseline 4.21 --target 4.22 --dry-run
@@ -101,6 +110,7 @@ while [[ $# -gt 0 ]]; do
         --baseline) BASELINE="$2"; shift 2 ;;
         --target) TARGET="$2"; shift 2 ;;
         --version) VERSION="$2"; shift 2 ;;
+        --steps) STEPS="$2"; shift 2 ;;
         --dry-run) DRY_RUN=true; shift ;;
         --verbose) VERBOSE=true; shift ;;
         --report-dir) REPORT_DIR="$2"; shift 2 ;;
@@ -224,6 +234,30 @@ else
     log_info "Auto-detected target pullspec: $TARGET_PULLSPEC"
 fi
 
+# Parse steps if provided
+STEPS_ARRAY=()
+if [[ -n "$STEPS" ]]; then
+    # Split comma-separated steps
+    IFS=',' read -ra STEPS_ARRAY <<< "$STEPS"
+
+    # Validate each step
+    for step in "${STEPS_ARRAY[@]}"; do
+        # Trim whitespace
+        step=$(echo "$step" | xargs)
+
+        if [[ "$step" != "aws" ]] && [[ "$step" != "gcp" ]] && [[ "$step" != "ocp" ]] && [[ "$step" != "feature-gates" ]]; then
+            log_error "Invalid step: $step"
+            log_error "Valid steps are: aws, gcp, ocp, feature-gates"
+            exit 1
+        fi
+    done
+
+    log_info "Steps to run: ${STEPS_ARRAY[*]}"
+else
+    # Default: run all steps
+    STEPS_ARRAY=("aws" "gcp" "ocp" "feature-gates")
+fi
+
 # Dry-run mode: show resolved versions and exit
 if [[ "$DRY_RUN" == "true" ]]; then
     log_info ""
@@ -237,6 +271,11 @@ if [[ "$DRY_RUN" == "true" ]]; then
     fi
     if [[ -n "$TARGET_PULLSPEC" ]]; then
         log_info "Target pullspec: $TARGET_PULLSPEC"
+    fi
+    if [[ -n "$STEPS" ]]; then
+        log_info "Steps to run: ${STEPS_ARRAY[*]}"
+    else
+        log_info "Steps to run: all (aws, gcp, ocp, feature-gates)"
     fi
     log_info "========================================="
     log_info "Exiting without running gap analysis"
@@ -258,7 +297,21 @@ main() {
     log_info "========================================="
     log_info "Baseline: $BASELINE"
     log_info "Target:   $TARGET"
-    log_info "Gap Analysis checks: AWS STS, GCP WIF, OCP Gate Acknowledgments, Feature Gates"
+
+    # Build checks description based on steps
+    local checks_desc=""
+    for step in "${STEPS_ARRAY[@]}"; do
+        case "$step" in
+            aws) checks_desc="${checks_desc}AWS STS, " ;;
+            gcp) checks_desc="${checks_desc}GCP WIF, " ;;
+            ocp) checks_desc="${checks_desc}OCP Gate Acknowledgments, " ;;
+            feature-gates) checks_desc="${checks_desc}Feature Gates, " ;;
+        esac
+    done
+    # Remove trailing comma and space
+    checks_desc="${checks_desc%, }"
+
+    log_info "Gap Analysis checks: $checks_desc"
     log_info "Report Directory: $REPORT_DIR"
     log_info "========================================="
 
@@ -274,57 +327,76 @@ main() {
     # Set environment variable to skip individual reports (full report will be generated instead)
     export GAP_FULL_REPORT=1
 
+    # Helper function to check if a step should run
+    should_run_step() {
+        local step_name="$1"
+        for step in "${STEPS_ARRAY[@]}"; do
+            if [[ "$step" == "$step_name" ]]; then
+                return 0
+            fi
+        done
+        return 1
+    }
+
     # Run AWS STS analysis
-    log_info ""
-    log_info "Running AWS STS Policy Gap Analysis..."
-    if python3 "${SCRIPT_DIR}/gap-aws-sts.py" \
-        --baseline "$BASELINE" \
-        --target "$TARGET" \
-        --report-dir "$REPORT_DIR" \
-        $VERBOSE_FLAG 2>&1; then
-        aws_result=0
-    else
-        aws_result=1
+    if should_run_step "aws"; then
+        log_info ""
+        log_info "Running AWS STS Policy Gap Analysis..."
+        if python3 "${SCRIPT_DIR}/gap-aws-sts.py" \
+            --baseline "$BASELINE" \
+            --target "$TARGET" \
+            --report-dir "$REPORT_DIR" \
+            $VERBOSE_FLAG 2>&1; then
+            aws_result=0
+        else
+            aws_result=1
+        fi
     fi
 
     # Run GCP WIF analysis
-    log_info ""
-    log_info "Running GCP WIF Policy Gap Analysis..."
-    if python3 "${SCRIPT_DIR}/gap-gcp-wif.py" \
-        --baseline "$BASELINE" \
-        --target "$TARGET" \
-        --report-dir "$REPORT_DIR" \
-        $VERBOSE_FLAG 2>&1; then
-        gcp_result=0
-    else
-        gcp_result=1
+    if should_run_step "gcp"; then
+        log_info ""
+        log_info "Running GCP WIF Policy Gap Analysis..."
+        if python3 "${SCRIPT_DIR}/gap-gcp-wif.py" \
+            --baseline "$BASELINE" \
+            --target "$TARGET" \
+            --report-dir "$REPORT_DIR" \
+            $VERBOSE_FLAG 2>&1; then
+            gcp_result=0
+        else
+            gcp_result=1
+        fi
     fi
 
     # Run OCP Gate Acknowledgment analysis
-    log_info ""
-    log_info "Running OCP Admin Gate Acknowledgment Analysis..."
-    if python3 "${SCRIPT_DIR}/gap-ocp-gate-ack.py" \
-        --baseline "$BASELINE" \
-        --target "$TARGET" \
-        --report-dir "$REPORT_DIR" \
-        $VERBOSE_FLAG 2>&1; then
-        ocp_gate_ack_result=0
-    else
-        ocp_gate_ack_result=1
+    if should_run_step "ocp"; then
+        log_info ""
+        log_info "Running OCP Admin Gate Acknowledgment Analysis..."
+        if python3 "${SCRIPT_DIR}/gap-ocp-gate-ack.py" \
+            --baseline "$BASELINE" \
+            --target "$TARGET" \
+            --report-dir "$REPORT_DIR" \
+            $VERBOSE_FLAG 2>&1; then
+            ocp_gate_ack_result=0
+        else
+            ocp_gate_ack_result=1
+        fi
     fi
 
     # Run Feature Gates analysis (informational only - always passes)
     # IMPORTANT: Feature Gates should always be executed last, even if new checks are added in the future
-    log_info ""
-    log_info "Running Feature Gates Gap Analysis..."
-    if python3 "${SCRIPT_DIR}/gap-feature-gates.py" \
-        --baseline "$BASELINE" \
-        --target "$TARGET" \
-        --report-dir "$REPORT_DIR" \
-        $VERBOSE_FLAG 2>&1; then
-        feature_gates_result=0
-    else
-        feature_gates_result=1
+    if should_run_step "feature-gates"; then
+        log_info ""
+        log_info "Running Feature Gates Gap Analysis..."
+        if python3 "${SCRIPT_DIR}/gap-feature-gates.py" \
+            --baseline "$BASELINE" \
+            --target "$TARGET" \
+            --report-dir "$REPORT_DIR" \
+            $VERBOSE_FLAG 2>&1; then
+            feature_gates_result=0
+        else
+            feature_gates_result=1
+        fi
     fi
 
     # Print summary
@@ -333,19 +405,33 @@ main() {
     log_info "  Gap Analysis Complete!"
     log_info "========================================="
 
-    if [[ $aws_result -eq 0 ]] && [[ $gcp_result -eq 0 ]] && [[ $ocp_gate_ack_result -eq 0 ]]; then
+    # Check if any validation checks failed (only for steps that ran)
+    local any_failed=false
+    if should_run_step "aws" && [[ $aws_result -eq 1 ]]; then
+        any_failed=true
+    fi
+    if should_run_step "gcp" && [[ $gcp_result -eq 1 ]]; then
+        any_failed=true
+    fi
+    if should_run_step "ocp" && [[ $ocp_gate_ack_result -eq 1 ]]; then
+        any_failed=true
+    fi
+
+    if [[ "$any_failed" == "false" ]]; then
         log_success "All validation checks passed"
     else
-        if [[ $aws_result -eq 1 ]]; then
+        if should_run_step "aws" && [[ $aws_result -eq 1 ]]; then
             log_info "AWS STS: Target version validation failed (FAIL)"
         fi
-        if [[ $gcp_result -eq 1 ]]; then
+        if should_run_step "gcp" && [[ $gcp_result -eq 1 ]]; then
             log_info "GCP WIF: Target version validation failed (FAIL)"
         fi
-        if [[ $ocp_gate_ack_result -eq 1 ]]; then
+        if should_run_step "ocp" && [[ $ocp_gate_ack_result -eq 1 ]]; then
             log_info "OCP Gate Acknowledgments: Target version validation failed (FAIL)"
         fi
-        log_info "Feature Gates: Informational only (does not affect pass/fail)"
+        if should_run_step "feature-gates"; then
+            log_info "Feature Gates: Informational only (does not affect pass/fail)"
+        fi
     fi
 
     # Generate combined report
@@ -358,10 +444,25 @@ main() {
         log_warning "Failed to generate combined report (individual reports still available)"
     }
 
-    # Exit 1 if any check failed
+    # Exit 1 if any check failed (only for steps that ran)
     # Note: feature gates are informational only and always pass (exit 0)
     # If feature_gates_result=1, it means script execution error, which should fail
-    if [[ $aws_result -eq 1 ]] || [[ $gcp_result -eq 1 ]] || [[ $feature_gates_result -eq 1 ]] || [[ $ocp_gate_ack_result -eq 1 ]]; then
+    local should_exit_fail=false
+
+    if should_run_step "aws" && [[ $aws_result -eq 1 ]]; then
+        should_exit_fail=true
+    fi
+    if should_run_step "gcp" && [[ $gcp_result -eq 1 ]]; then
+        should_exit_fail=true
+    fi
+    if should_run_step "ocp" && [[ $ocp_gate_ack_result -eq 1 ]]; then
+        should_exit_fail=true
+    fi
+    if should_run_step "feature-gates" && [[ $feature_gates_result -eq 1 ]]; then
+        should_exit_fail=true
+    fi
+
+    if [[ "$should_exit_fail" == "true" ]]; then
         log_error ""
         log_error "❌ FAILED"
         exit 1
