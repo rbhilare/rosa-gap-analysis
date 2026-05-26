@@ -657,6 +657,42 @@ def generate_wif_template(version, output_dir):
     return {'vanilla.yaml': wif_template}
 
 
+def calculate_previous_version(target_minor):
+    """
+    Calculate the previous version(s) for acknowledgment files.
+
+    Upgrade edges:
+    - 4.22 → 4.23 (normal)
+    - 4.22 → 5.0 (major version jump)
+    - 4.23 → 4.24 (normal)
+    - 4.23 → 5.1 (major version jump)
+    - 5.0 → 5.1 (normal within 5.x)
+    - 5.1 → 5.2 (normal)
+    - etc.
+
+    Args:
+        target_minor: Target version (e.g., "5.0", "5.1", "4.22")
+
+    Returns:
+        List of previous version strings (e.g., ["4.22"] for "5.0", ["4.23", "5.0"] for "5.1")
+    """
+    parts = target_minor.split('.')
+    major = int(parts[0])
+    minor = int(parts[1])
+
+    # Special case: 5.0 comes after 4.22
+    if major == 5 and minor == 0:
+        return ["4.22"]
+
+    # Special case: 5.1 comes after BOTH 4.23 AND 5.0
+    if major == 5 and minor == 1:
+        return ["4.23", "5.0"]
+
+    # Normal case: subtract 1 from minor version
+    previous_minor = minor - 1
+    return [f"{major}.{previous_minor}"]
+
+
 def generate_sts_ack_files(target_version):
     """
     Generate STS acknowledgment files.
@@ -667,9 +703,9 @@ def generate_sts_ack_files(target_version):
     """
     target_minor = extract_minor_version(target_version)
 
-    # Calculate baseline (target - 1)
-    parts = target_minor.split('.')
-    baseline_minor = f"{parts[0]}.{int(parts[1]) - 1}"
+    # Calculate baseline (target - 1) with special handling for major version transitions
+    baseline_versions = calculate_previous_version(target_minor)
+    versions_yaml = ', '.join([f'"{v}"' for v in baseline_versions])
 
     files = {}
 
@@ -679,7 +715,7 @@ selectorSyncSet:
   matchExpressions:
   - key: hive.openshift.io/version-major-minor
     operator: In
-    values: ["{baseline_minor}"]
+    values: [{versions_yaml}]
   - key: api.openshift.com/sts
     operator: In
     values: ["true"]
@@ -709,9 +745,9 @@ def generate_wif_ack_files(target_version):
     """
     target_minor = extract_minor_version(target_version)
 
-    # Calculate baseline (target - 1)
-    parts = target_minor.split('.')
-    baseline_minor = f"{parts[0]}.{int(parts[1]) - 1}"
+    # Calculate baseline (target - 1) with special handling for major version transitions
+    baseline_versions = calculate_previous_version(target_minor)
+    versions_yaml = ', '.join([f'"{v}"' for v in baseline_versions])
 
     files = {}
 
@@ -721,7 +757,7 @@ selectorSyncSet:
   matchExpressions:
   - key: hive.openshift.io/version-major-minor
     operator: In
-    values: ["{baseline_minor}"]
+    values: [{versions_yaml}]
   - key: api.openshift.com/wif
     operator: In
     values: ["true"]
@@ -749,9 +785,9 @@ def generate_ocp_ack_files(target_version):
     """
     target_minor = extract_minor_version(target_version)
 
-    # Calculate baseline (target - 1)
-    parts = target_minor.split('.')
-    baseline_minor = f"{parts[0]}.{int(parts[1]) - 1}"
+    # Calculate baseline (target - 1) with special handling for major version transitions
+    baseline_versions = calculate_previous_version(target_minor)
+    versions_yaml = ', '.join([f'"{v}"' for v in baseline_versions])
 
     files = {}
 
@@ -761,7 +797,7 @@ selectorSyncSet:
   matchExpressions:
   - key: hive.openshift.io/version-major-minor
     operator: In
-    values: ["{baseline_minor}"]
+    values: [{versions_yaml}]
 """
     files['config.yaml'] = config_yaml
 

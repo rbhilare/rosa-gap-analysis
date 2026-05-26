@@ -475,7 +475,7 @@ The analyzer uses library modules organized under `ci/lib/`:
 **ci/lib/prow-api.sh** - Prow deck API integration:
 - Uses Prow deck API at `https://prow.ci.openshift.org/prowjobs.js` (publicly accessible, no auth required)
 - `get_job_executions()` - Get recent job executions (count parameter, default: 1)
-- `get_job_metadata()` - Fetch job details (status, timestamps)
+- `get_job_metadata(job_id, [job_name])` - Fetch job details (status, timestamps); job_name optional (defaults to DEFAULT_JOB_NAME)
 - `download_job_directory_gcs()` - Download entire job directory using `gcloud storage cp -r`
 - `find_gap_analysis_reports()` - Find gap-analysis reports in downloaded artifacts directory
 

@@ -49,9 +49,9 @@ while IFS= read -r ID; do
     fi
 
     # Correct format examples:
-    # role_name_v4.17 (custom names)
+    # role_name_v4.17 or role_name_v5.0 (custom names with v4 or v5 version)
     # compute.storageAdmin (gcp permission format)
-    if [[ ! ( "$ID" =~ ^[a-z0-9_]+_v4\.[0-9]+$ || "$ID" =~ ^[a-zA-Z]+(\.[a-zA-Z]+)+(\.\*)?$ ) ]]; then
+    if [[ ! ( "$ID" =~ ^[a-z0-9_]+_v[45]\.[0-9]+$ || "$ID" =~ ^[a-zA-Z]+(\.[a-zA-Z]+)+(\.\*)?$ ) ]]; then
         ERROR_MESSAGE+=$"ROLE: '$ID' wrong format.\n"
     fi
 done <<< "$ROLE_IDS"
