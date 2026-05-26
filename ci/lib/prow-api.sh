@@ -172,13 +172,14 @@ find_gap_analysis_reports() {
 }
 
 # Get job metadata (versions, timestamps)
-# Args: $1 = job_id
+# Args: $1 = job_id, $2 = job_name (optional)
 # Returns: JSON object with metadata
 get_job_metadata() {
     local job_id="$1"
+    local job_name="${2:-${DEFAULT_JOB_NAME}}"
     local job_details
 
-    job_details=$(get_job_execution "${job_id}")
+    job_details=$(get_job_execution "${job_id}" "${job_name}")
 
     if [ -z "${job_details}" ] || [ "${job_details}" = "null" ]; then
         echo "ERROR: Failed to fetch job details" >&2

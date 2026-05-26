@@ -365,7 +365,7 @@ main() {
 
         # Get job metadata
         local job_metadata
-        job_metadata=$(get_job_metadata "${job_id}")
+        job_metadata=$(get_job_metadata "${job_id}" "${job_name}")
 
         if [ -n "${job_metadata}" ]; then
             echo "${job_metadata}" | jq .
@@ -413,7 +413,7 @@ main() {
 
         # Get job metadata
         local job_metadata
-        job_metadata=$(get_job_metadata "${candidate_job_id}")
+        job_metadata=$(get_job_metadata "${candidate_job_id}" "${job_name}")
 
         if [ -n "${job_metadata}" ]; then
             echo "${job_metadata}" | jq .
