@@ -70,6 +70,12 @@ def fetch_url(url, timeout=30):
         return response.read()
 
 
+def is_pre_ga_version(version):
+    """Check if a version string is pre-GA (ec, rc, alpha, beta, nightly)."""
+    pre_ga_markers = ['-ec.', '-rc.', '-alpha.', '-beta.', '-nightly']
+    return any(marker in version for marker in pre_ga_markers)
+
+
 def check_yaml_installed():
     """Check if PyYAML is installed and exit if not."""
     try:

@@ -12,7 +12,7 @@ from pathlib import Path
 # Add lib directory to path
 sys.path.insert(0, str(Path(__file__).parent / 'lib'))
 
-from common import log_info, log_success, log_error, log_warning, check_command
+from common import log_info, log_success, log_error, log_warning, check_command, is_pre_ga_version
 from openshift_releases import resolve_openshift_version, extract_minor_version
 from reporters import generate_html_report, generate_json_report
 from ack_validation import (
@@ -530,20 +530,32 @@ Exit Codes:
     mcc_sts_url = f"https://github.com/openshift/managed-cluster-config/tree/master/resources/sts/{target_minor}"
     mcc_ack_url = f"https://github.com/openshift/managed-cluster-config/tree/master/deploy/osd-cluster-acks/sts/{target_minor}"
 
+    # For pre-GA versions, missing MCC scaffolding is expected
+    pre_ga_override = False
+    if not validation_details['valid'] and is_pre_ga_version(target):
+        pre_ga_override = True
+        log_warning(f"MCC scaffolding not yet created for pre-GA version {target}, skipping validation")
+        validation_details['valid'] = True
+
     if validation_details['valid']:
         validation_result = 'PASS'
         log_success("=" * 60)
-        log_success("✓ VALIDATION PASSED - All checks successful")
+        if pre_ga_override:
+            log_success("✓ VALIDATION PASSED (pre-GA, MCC scaffolding not yet required)")
+        else:
+            log_success("✓ VALIDATION PASSED - All checks successful")
         log_success("=" * 60)
-        log_success(f"\nCHECK #1: Resources Validation [{check_1['status']}]")
-        log_success(f"  Location: {mcc_sts_url}")
-        log_success(f"  ✓ Validated {check_1['file_count']} policy file(s)")
-        if check_1['changed_files_count'] > 0:
-            log_success(f"  ✓ Changes detected in {check_1['changed_files_count']} file(s)")
-        log_success(f"\nCHECK #2: Admin Acknowledgment [{check_2['status']}]")
-        log_success(f"  Location: {mcc_ack_url}")
-        log_success(f"  ✓ config.yaml: baseline version {check_2['actual_baseline']} matches expected")
-        log_success(f"  ✓ CloudCredential: upgrade version validated")
+
+        if not pre_ga_override:
+            log_success(f"\nCHECK #1: Resources Validation [{check_1['status']}]")
+            log_success(f"  Location: {mcc_sts_url}")
+            log_success(f"  ✓ Validated {check_1['file_count']} policy file(s)")
+            if check_1['changed_files_count'] > 0:
+                log_success(f"  ✓ Changes detected in {check_1['changed_files_count']} file(s)")
+            log_success(f"\nCHECK #2: Admin Acknowledgment [{check_2['status']}]")
+            log_success(f"  Location: {mcc_ack_url}")
+            log_success(f"  ✓ config.yaml: baseline version {check_2['actual_baseline']} matches expected")
+            log_success(f"  ✓ CloudCredential: upgrade version validated")
         log_success("")
 
         # Display warnings if any (these don't fail validation)

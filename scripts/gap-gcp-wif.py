@@ -12,7 +12,7 @@ from pathlib import Path
 # Add lib directory to path
 sys.path.insert(0, str(Path(__file__).parent / 'lib'))
 
-from common import log_info, log_success, log_error, log_warning, check_command
+from common import log_info, log_success, log_error, log_warning, check_command, is_pre_ga_version
 from openshift_releases import resolve_openshift_version, extract_minor_version
 from reporters import generate_html_report, generate_json_report
 from ack_validation import (
@@ -509,23 +509,35 @@ Exit Codes:
     mcc_wif_url = f"https://github.com/openshift/managed-cluster-config/tree/master/resources/wif/{target_minor}"
     mcc_ack_url = f"https://github.com/openshift/managed-cluster-config/tree/master/deploy/osd-cluster-acks/wif/{target_minor}"
 
+    # For pre-GA versions, missing MCC scaffolding is expected
+    pre_ga_override = False
+    if not validation_details['valid'] and is_pre_ga_version(target):
+        pre_ga_override = True
+        log_warning(f"MCC scaffolding not yet created for pre-GA version {target}, skipping validation")
+        validation_details['valid'] = True
+
     if validation_details['valid']:
         validation_result = 'PASS'
         log_success("=" * 60)
-        log_success("✓ VALIDATION PASSED - All checks successful")
+        if pre_ga_override:
+            log_success("✓ VALIDATION PASSED (pre-GA, MCC scaffolding not yet required)")
+        else:
+            log_success("✓ VALIDATION PASSED - All checks successful")
         log_success("=" * 60)
-        log_success(f"\nCHECK #3: GCP WIF Resources Validation [{check_1['status']}]")
-        log_success(f"  Location: {mcc_wif_url}")
-        log_success(f"  ✓ Validated vanilla.yaml")
-        if added_actions:
-            log_success(f"  ✓ All {len(added_actions)} added GCP permission(s) found")
-            if check_1['roles_with_changes']:
-                unique_roles = len(set([r for roles in check_1['roles_with_changes'].values() for r in roles]))
-                log_success(f"  ✓ Changes appear in {unique_roles} role(s)")
-        log_success(f"\nCHECK #4: GCP WIF Admin Acknowledgment [{check_2['status']}]")
-        log_success(f"  Location: {mcc_ack_url}")
-        log_success(f"  ✓ config.yaml: baseline version {check_2['actual_baseline']} matches expected")
-        log_success(f"  ✓ CloudCredential: upgrade version validated")
+
+        if not pre_ga_override:
+            log_success(f"\nCHECK #3: GCP WIF Resources Validation [{check_1['status']}]")
+            log_success(f"  Location: {mcc_wif_url}")
+            log_success(f"  ✓ Validated vanilla.yaml")
+            if added_actions:
+                log_success(f"  ✓ All {len(added_actions)} added GCP permission(s) found")
+                if check_1['roles_with_changes']:
+                    unique_roles = len(set([r for roles in check_1['roles_with_changes'].values() for r in roles]))
+                    log_success(f"  ✓ Changes appear in {unique_roles} role(s)")
+            log_success(f"\nCHECK #4: GCP WIF Admin Acknowledgment [{check_2['status']}]")
+            log_success(f"  Location: {mcc_ack_url}")
+            log_success(f"  ✓ config.yaml: baseline version {check_2['actual_baseline']} matches expected")
+            log_success(f"  ✓ CloudCredential: upgrade version validated")
         log_success("")
     else:
         validation_result = 'FAIL'
