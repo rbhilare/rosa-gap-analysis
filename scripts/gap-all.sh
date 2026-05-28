@@ -651,17 +651,17 @@ main() {
 
     # List HTML reports if they exist
     local html_reports=$(find "${REPORT_DIR}" -maxdepth 1 -name "*.html" -type f 2>/dev/null | sort)
-    if [[ -n "$html_reports" ]]; then
+    if [[ -n "$html_reports" && -n "$job" && -n "$buildid" ]]; then
         print_summary_line "- HTML reports:"
         while IFS= read -r report; do
             local basename=$(basename "$report")
-            print_summary_line "  • https://gcsweb-ci.apps.ci.l2s4.p1.openshiftapps.com/gcs/test-platform-results/logs/${JOB_NAME}/${BUILD_ID}/artifacts/test/artifacts/rosa-gap-analysis-reports/${basename}"
+            print_summary_line "  • https://gcsweb-ci.apps.ci.l2s4.p1.openshiftapps.com/gcs/test-platform-results/logs/${job}/${buildid}/artifacts/test/artifacts/rosa-gap-analysis-reports/${basename}"
         done <<< "$html_reports"
     fi
 
     # Add build log if available
-    if [[ -n "${JOB_NAME:-}" && -n "${BUILD_ID:-}" ]]; then
-        print_summary_line "- Build log: https://prow.ci.openshift.org/view/gs/test-platform-results/logs/${JOB_NAME}/${BUILD_ID}/build-log.txt"
+    if [[  -n "$job" && -n "$buildid" ]]; then
+        print_summary_line "- Build log: https://prow.ci.openshift.org/view/gs/test-platform-results/logs/${job}/${buildid}/build-log.txt"
     fi
 
     print_summary_line "==============================================================================="
