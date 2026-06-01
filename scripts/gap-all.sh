@@ -400,18 +400,6 @@ main() {
         return 1
     }
 
-    # Helper function to print summary lines
-    print_summary_line() {
-        echo "$1"
-    }
-
-    # Helper function to print summary header
-    print_summary_header() {
-        print_summary_line "==============================================================================="
-        print_summary_line "$1"
-        print_summary_line "==============================================================================="
-    }
-
     # Helper function to print check result
     print_check_result() {
         local symbol="$1"
@@ -420,7 +408,7 @@ main() {
         local status="$4"
         local message="$5"
 
-        print_summary_line "[$symbol] CHECK #$check_num: $check_name - $status ($message)"
+        echo "[$symbol] CHECK #$check_num: $check_name - $status ($message)"
     }
 
     # Helper function to read status file and populate check arrays
@@ -597,23 +585,25 @@ main() {
 
     # Print comprehensive summary
     log_info ""
-    print_summary_header "GAP ANALYSIS SUMMARY"
+    echo "==============================================================================="
+    echo "GAP ANALYSIS SUMMARY"
+    echo "==============================================================================="
 
     # Job information (if running in CI)
     if [[ -n "${job}" ]]; then
-        print_summary_line "Job: ${job}"
+        echo "Job: ${job}"
     fi
     if [[ -n "${buildid}" ]]; then
-        print_summary_line "Run: ${buildid}"
+        echo "Run: ${buildid}"
     fi
 
-    print_summary_line "Baseline: ${BASELINE}"
-    print_summary_line "Target: ${TARGET}"
-    print_summary_line "Started: ${START_TIME_FORMATTED}"
-    print_summary_line "Completed: $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
-    print_summary_line "Duration: ${duration_formatted}"
-    print_summary_line ""
-    print_summary_line "RESULTS:"
+    echo "Baseline: ${BASELINE}"
+    echo "Target: ${TARGET}"
+    echo "Started: ${START_TIME_FORMATTED}"
+    echo "Completed: $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
+    echo "Duration: ${duration_formatted}"
+    echo ""
+    echo "RESULTS:"
 
     # Check if any validation checks failed (only for steps that ran)
     local any_failed=false
@@ -633,7 +623,7 @@ main() {
         fi
     done
 
-    print_summary_line ""
+    echo ""
 
     # Overall status with warnings
     local has_warnings=false
@@ -646,34 +636,34 @@ main() {
 
     if [[ "$any_failed" == "false" ]]; then
         if [[ "$has_warnings" == "true" ]]; then
-            print_summary_line "OVERALL STATUS: SUCCESS (with warnings)"
+            echo "OVERALL STATUS: SUCCESS (with warnings)"
         else
-            print_summary_line "OVERALL STATUS: SUCCESS"
+            echo "OVERALL STATUS: SUCCESS"
         fi
     else
-        print_summary_line "OVERALL STATUS: FAILED"
+        echo "OVERALL STATUS: FAILED"
     fi
 
-    print_summary_line ""
-    print_summary_line "ARTIFACTS:"
-    print_summary_line "- Reports directory: ${REPORT_DIR}/"
+    echo ""
+    echo "ARTIFACTS:"
+    echo "- Reports directory: ${REPORT_DIR}/"
 
     # List HTML reports if they exist
     local html_reports=$(find "${REPORT_DIR}" -maxdepth 1 -name "*.html" -type f 2>/dev/null | sort)
     if [[ -n "$html_reports" && -n "$job" && -n "$buildid" ]]; then
-        print_summary_line "- HTML reports:"
+        echo "- HTML reports:"
         while IFS= read -r report; do
             local basename=$(basename "$report")
-            print_summary_line "  • https://gcsweb-ci.apps.ci.l2s4.p1.openshiftapps.com/gcs/test-platform-results/logs/${job}/${buildid}/artifacts/test/artifacts/rosa-gap-analysis-reports/${basename}"
+            echo "  • https://gcsweb-ci.apps.ci.l2s4.p1.openshiftapps.com/gcs/test-platform-results/logs/${job}/${buildid}/artifacts/test/artifacts/rosa-gap-analysis-reports/${basename}"
         done <<< "$html_reports"
     fi
 
     # Add build log if available
     if [[  -n "$job" && -n "$buildid" ]]; then
-        print_summary_line "- Build log: https://prow.ci.openshift.org/view/gs/test-platform-results/logs/${job}/${buildid}/build-log.txt"
+        echo "- Build log: https://prow.ci.openshift.org/view/gs/test-platform-results/logs/${job}/${buildid}/build-log.txt"
     fi
 
-    print_summary_line "==============================================================================="
+    echo "==============================================================================="
 
 }
 
