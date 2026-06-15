@@ -7,7 +7,6 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/lib/logging.sh"
 source "${SCRIPT_DIR}/lib/openshift-releases.sh"
-source "${SCRIPT_DIR}/lib/ocm_auth.sh"
 
 # Get project root (one level up from scripts/)
 PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
@@ -51,7 +50,6 @@ Environment Variables:
                           Special values: NIGHTLY (dev nightly), CANDIDATE (dev candidate)
   OPENSHIFT_VERSION       Single version to analyze (auto-resolves baseline and target)
   REPORT_DIR              Directory to store reports (default: reports/)
-  OCM_TOKEN               To run the script with local access set OCM_TOKEN environement varilable or log in to ocm environment beforehand
 
 Version Resolution Precedence (highest to lowest):
   1. --version flag (auto-resolve baseline and target)
@@ -99,7 +97,6 @@ Examples:
   OPENSHIFT_VERSION=4.22 $0                        # Same as --version 4.22
   BASE_VERSION=4.21.5 TARGET_VERSION=4.22.0-ec.2 $0  # Both required
   BASE_VERSION=4.21 TARGET_VERSION=NIGHTLY $0      # Nightly target
-  OCM_TOKEN=xxxxxx
 
 Exit Codes:
   0 - All checks passed (PASS)
