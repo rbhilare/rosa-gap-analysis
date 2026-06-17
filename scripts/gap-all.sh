@@ -7,6 +7,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/lib/logging.sh"
 source "${SCRIPT_DIR}/lib/openshift-releases.sh"
+source "${SCRIPT_DIR}/lib/ocm_auth.sh"
 
 # Get project root (one level up from scripts/)
 PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
@@ -138,6 +139,12 @@ if ( [[ -n "$BASELINE" ]] && [[ -z "$TARGET" ]] ) || ( [[ -z "$BASELINE" ]] && [
     log_error "Use either:"
     log_error "  --version <version>              (auto-resolve baseline and target)"
     log_error "  --baseline <ver> --target <ver>  (explicit control)"
+    exit 1
+fi
+
+# OCM authentication if credentials are available
+if ! ocm_authenticate; then
+    log_error "OCM authentication failed"
     exit 1
 fi
 
