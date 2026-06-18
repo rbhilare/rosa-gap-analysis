@@ -21,6 +21,7 @@ RUN dnf install --allowerasing -y \
         findutils \
         diffutils \
         coreutils \
+        ocm-cli \
     && dnf clean all
 
 # Install Python packages
