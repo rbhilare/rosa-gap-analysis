@@ -7,6 +7,7 @@ FROM registry.access.redhat.com/ubi9/ubi:latest
 ARG OC_VERSION=4.21
 ARG YQ_VERSION=v4.52.4
 ARG OCM_CLI_BASE_URL="https://github.com/openshift-online/ocm-cli/releases/latest/download"
+ARG ROSA_CLI_BASE_URL="https://github.com/openshift/rosa/releases/latest/download"
 
 # System packages
 RUN dnf install --allowerasing -y \
@@ -60,6 +61,18 @@ RUN arch=$(uname -m) && \
     chmod +x /usr/local/bin/ocm && \
     ocm version
 
+# Install rosa-cli 
+RUN arch=$(uname -m) && \
+    case "${arch}" in \
+        x86_64)  arch="x86_64" ;; \
+        aarch64) arch="arm64" ;; \
+    esac && \
+    curl -fsSL "${ROSA_CLI_BASE_URL}/rosa_Linux_${arch}.tar.gz" -o /tmp/rosa.tar.gz && \
+    tar -xzf /tmp/rosa.tar.gz -C /usr/local/bin rosa && \
+    chmod +x /usr/local/bin/rosa && \
+    rosa version
+
+
 # Pre-create cache directories writable by any UID (OpenShift runs as random UID)
 RUN mkdir -p /tmp/.cache /tmp/gap-analysis-data && \
     chmod -R 777 /tmp/.cache /tmp/gap-analysis-data
@@ -83,6 +96,8 @@ RUN echo "Verifying tool installations..." && \
     yq --version && \
     gh --version && \
     oc version --client && \
+    echo "ocm: " && ocm version && \
+    echo "rosa: " && rosa version && \
     python3 --version && \
     python3 -c "import yaml; print('PyYAML available')" && \
     python3 -c "import jinja2; print('Jinja2 available')" && \
