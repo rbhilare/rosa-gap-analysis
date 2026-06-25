@@ -112,6 +112,7 @@ def find_latest_reports(baseline, target, report_dir='reports'):
         'gcp_wif': None,
         'feature_gates': None,
         'ocp_gate_ack': None,
+        'ga_validation': None,
         'ocm_version_gate': None
     }
 
@@ -153,6 +154,12 @@ def find_latest_reports(baseline, target, report_dir='reports'):
     # Sort all found files and pick the latest
     if oga_files:
         reports['ocp_gate_ack'] = sorted(oga_files)[-1]  # Latest by filename (timestamp)
+
+    # Find GA Readiness validation report (uses target version)
+    ga_pattern = os.path.join(report_dir, f"gap-analysis-ga-validation_GA_readiness_{target}_*.json")
+    ga_files = sorted(glob.glob(ga_pattern))
+    if ga_files:
+        reports['ga_validation'] = ga_files[-1]  # Latest
 
     # Find OCM Version Gate report (uses minor versions)
     ovg_pattern = os.path.join(report_dir, f"gap-analysis-ocm-version-gate_{baseline_minor}_to_{target_minor}_*.json")
@@ -215,29 +222,122 @@ def main():
         'build_metrics': build_metrics
     }
 
+    # Helper to load status check data for fallback messages
+    def get_status_msg(check_num, default_msg):
+        status_file = os.path.join(args.report_dir, f"status-check-{check_num}.json")
+        if os.path.exists(status_file):
+            try:
+                with open(status_file, 'r') as f:
+                    status_data = json.load(f)
+                    return status_data.get('details', {}).get('message', default_msg)
+            except Exception:
+                pass
+        return default_msg
+
     # Load AWS STS data
     if reports['aws_sts']:
         with open(reports['aws_sts'], 'r') as f:
             report_data['aws_sts'] = json.load(f)
         log_info(f"Loaded AWS STS report: {reports['aws_sts']}")
+    else:
+        err_msg = get_status_msg(1, "AWS STS script execution failed or check skipped")
+        report_data['aws_sts'] = {
+            'validation_result': 'FAIL',
+            'comparison': {
+                'actions': {'target_only': [], 'baseline_only': []},
+                'file_changes': []
+            },
+            'validation_details': {
+                'check_1_resources': {'status': 'FAIL', 'errors': [err_msg], 'file_count': 0},
+                'check_2_admin_ack': {'status': 'FAIL', 'errors': [], 'expected_baseline': ''}
+            }
+        }
 
     # Load GCP WIF data
     if reports['gcp_wif']:
         with open(reports['gcp_wif'], 'r') as f:
             report_data['gcp_wif'] = json.load(f)
         log_info(f"Loaded GCP WIF report: {reports['gcp_wif']}")
+    else:
+        err_msg = get_status_msg(2, "GCP WIF script execution failed or check skipped")
+        report_data['gcp_wif'] = {
+            'validation_result': 'FAIL',
+            'comparison': {
+                'actions': {'target_only': [], 'baseline_only': []},
+                'file_changes': []
+            },
+            'validation_details': {
+                'check_1_resources': {'status': 'FAIL', 'errors': [err_msg], 'file_count': 0},
+                'check_2_admin_ack': {'status': 'FAIL', 'errors': [], 'expected_baseline': ''}
+            }
+        }
 
     # Load Feature Gates data
     if reports['feature_gates']:
         with open(reports['feature_gates'], 'r') as f:
             report_data['feature_gates'] = json.load(f)
         log_info(f"Loaded Feature Gates report: {reports['feature_gates']}")
+    else:
+        err_msg = get_status_msg(6, "Feature Gates script execution failed or check skipped")
+        report_data['feature_gates'] = {
+            'validation_result': 'PASS', # feature gates is informational
+            'is_z_stream': True,
+            'version': args.target,
+            'baseline': args.baseline,
+            'target': args.target,
+            'default_hypershift_gates': [],
+            'total_hypershift_gates': 0,
+            'error_message': err_msg
+        }
 
     # Load OCP Gate Acknowledgment data
     if reports['ocp_gate_ack']:
         with open(reports['ocp_gate_ack'], 'r') as f:
             report_data['ocp_gate_ack'] = json.load(f)
         log_info(f"Loaded OCP Gate Acknowledgment report: {reports['ocp_gate_ack']}")
+    else:
+        err_msg = get_status_msg(3, "OCP Gate Acknowledgment script execution failed or check skipped")
+        report_data['ocp_gate_ack'] = {
+            'validation_result': 'FAIL',
+            'ack_check_version': args.target,
+            'summary': {
+                'gates_requiring_ack': 1,
+                'unacknowledged': 1,
+                'ack_file_missing': True
+            },
+            'config_validation': {
+                'valid': False,
+                'errors': [err_msg]
+            },
+            'analysis': {
+                'acknowledged_gates': [],
+                'unacknowledged_gates': []
+            }
+        }
+
+    # Load GA Validation data
+    if reports['ga_validation']:
+        with open(reports['ga_validation'], 'r') as f:
+            report_data['ga_validation'] = json.load(f)
+        log_info(f"Loaded GA Readiness report: {reports['ga_validation']}")
+    else:
+        err_msg = get_status_msg(7, "GA Readiness Validation script execution failed or check skipped")
+        report_data['ga_validation'] = {
+            'validation_result': 'FAIL',
+            'metrics': {
+                'total': 4,
+                'failures': 4,
+                'warnings': 0,
+                'critical_failures': 4
+            },
+            'results': {
+                'VAL_EXEC': {
+                    'name': 'Script Execution',
+                    'status': 'FAIL',
+                    'message': err_msg
+                }
+            }
+        }
 
     # Load OCM Version Gate data
     if reports['ocm_version_gate']:

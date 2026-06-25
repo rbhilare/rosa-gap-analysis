@@ -280,6 +280,89 @@
             font-weight: 500;
         }
 
+        /* GA Readiness Validation checklist styling */
+        .checklist {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+            margin-top: 25px;
+        }
+        .check-item {
+            background-color: #f8f9fa;
+            border: 1px solid #e0e0e0;
+            border-radius: 8px;
+            padding: 15px 20px;
+            transition: all 0.2s ease;
+        }
+        .check-item:hover {
+            border-color: #cbd5e1;
+            background-color: #f1f5f9;
+        }
+        .check-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+        .check-title-group {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        .check-id {
+            font-family: 'Courier New', monospace;
+            background-color: #e2e8f0;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 0.9em;
+            font-weight: 700;
+            color: #475569;
+        }
+        .check-title {
+            font-size: 1.1em;
+            font-weight: 600;
+            color: #1e293b;
+        }
+        .check-body {
+            background-color: #ffffff;
+            border: 1px solid #e2e8f0;
+            border-radius: 6px;
+            padding: 15px;
+            margin-top: 10px;
+        }
+        .check-msg {
+            font-family: 'Courier New', monospace;
+            font-size: 0.95em;
+            color: #334155;
+            white-space: pre-wrap;
+            margin: 0;
+        }
+        .status-badge-val {
+            display: inline-block;
+            padding: 4px 10px;
+            border-radius: 9999px;
+            font-size: 0.8em;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            border: 1px solid;
+        }
+        .status-badge-val.pass {
+            background-color: #d4edda;
+            color: #155724;
+            border-color: #28a745;
+        }
+        .status-badge-val.warn {
+            background-color: #fff3cd;
+            color: #856404;
+            border-color: #ffc107;
+        }
+        .status-badge-val.fail {
+            background-color: #f8d7da;
+            color: #721c24;
+            border-color: #dc3545;
+        }
+
         .footer {
             margin-top: 40px;
             padding-top: 20px;
@@ -342,6 +425,17 @@
                     {% set success_count = success_count + 1 %}
                 {% endif %}
                 {% set info_count = info_count + 1 %}
+            {% endif %}
+
+            {% if ga_validation %}
+                {% if ga_validation.validation_result == 'FAIL' %}
+                    {% set critical_count = critical_count + 1 %}
+                {% elif ga_validation.validation_result == 'PASS' %}
+                    {% set success_count = success_count + 1 %}
+                {% endif %}
+                {% if ga_validation.metrics.warnings > 0 %}
+                    {% set warning_count = warning_count + 1 %}
+                {% endif %}
             {% endif %}
 
             {% if ocm_version_gate %}
@@ -549,6 +643,22 @@
                         </td>
                     </tr>
                     {% endif %}
+                    {% if ga_validation %}
+                    <tr>
+                        <td><strong>CHECK #7:</strong> GA Readiness Validation</td>
+                        <td>{% if ga_validation.validation_result == 'PASS' %}<span class="added">✅ PASS</span>{% else %}<span class="removed">❌ FAIL</span>{% endif %}</td>
+                        <td style="text-align: center;">-</td>
+                        <td style="text-align: center;">-</td>
+                        <td>
+                            {% if ga_validation.validation_result == 'PASS' %}
+                            All checks passed ({{ ga_validation.metrics.total }} checks)
+                            {% else %}
+                            {{ ga_validation.metrics.critical_failures }} critical failure(s), {{ ga_validation.metrics.warnings }} warning(s)
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endif %}
+
                     {% if ocm_version_gate %}
                     <tr>
                         <td><strong>CHECK #8:</strong> OCM Version Gates</td>
@@ -944,6 +1054,48 @@
             {% endif %}
             {% endif %}
 
+            {% if ga_validation %}
+            <h2 id="ga-validation">GA Readiness Validation Details</h2>
+
+            <h3>Validation Status</h3>
+            <div class="alert {% if ga_validation.validation_result == 'FAIL' %}error{% else %}success{% endif %}">
+                <strong>{% if ga_validation.validation_result == 'FAIL' %}❌ GA Readiness Validation Failed{% else %}✅ GA Readiness Validation Passed{% endif %}</strong>
+                <ul style="margin: 10px 0 0 0; padding-left: 20px;">
+                    <li><strong>Overall Result:</strong> {{ ga_validation.validation_result }}</li>
+                    <li><strong>Total Checks:</strong> {{ ga_validation.metrics.total }}</li>
+                    <li><strong>Passed Checks:</strong> {{ ga_validation.metrics.total - ga_validation.metrics.failures - ga_validation.metrics.warnings }}</li>
+                    <li><strong>Warnings:</strong> {{ ga_validation.metrics.warnings }}</li>
+                    <li><strong>Critical Failures:</strong> {{ ga_validation.metrics.critical_failures }}</li>
+                </ul>
+            </div>
+
+            <h3>Checklist Details</h3>
+            <div class="checklist">
+                {% for check_id, check_data in ga_validation.results | dictsort %}
+                    <div class="check-item">
+                        <div class="check-header">
+                            <div class="check-title-group">
+                                <span class="check-id">{{ check_id }}</span>
+                                <span class="check-title">{{ check_data.name }}</span>
+                            </div>
+                            <div>
+                                {% if check_data.status == 'PASS' %}
+                                    <span class="status-badge-val pass">PASS</span>
+                                {% elif check_data.status == 'WARN' %}
+                                    <span class="status-badge-val warn">WARN</span>
+                                {% else %}
+                                    <span class="status-badge-val fail">FAIL</span>
+                                {% endif %}
+                            </div>
+                        </div>
+                        <div class="check-body">
+                            <pre class="check-msg">{{ check_data.message }}</pre>
+                        </div>
+                    </div>
+                {% endfor %}
+            </div>
+            {% endif %}
+
             {% if ocm_version_gate %}
             <h2 id="ocm-version-gates">CHECK #8: OCM Version Gate Details</h2>
 
@@ -1038,7 +1190,6 @@
                 <p style="color: #6c757d; font-style: italic;">No version gates were detected for baseline version {{ ocm_version_gate.baseline_minor }}.x.</p>
             {% endif %}
             {% endif %}
-
             {% if feature_gates %}
             <h2 id="feature-gates">Feature Gate Details</h2>
 
