@@ -18,7 +18,7 @@ This framework helps platform teams identify IAM permission and feature gate cha
 
 ### What It Analyzes
 
-The framework performs **6 validation checks** across all scripts:
+The framework performs **8 validation checks** across all scripts:
 
 | Check # | Analysis Type | Description | Pass/Fail Impact |
 |---------|---------------|-------------|------------------|
@@ -28,6 +28,7 @@ The framework performs **6 validation checks** across all scripts:
 | **4** | GCP WIF Admin Ack | Validates GCP acknowledgment files | Exit 1 on FAIL |
 | **5** | OCP Admin Gates | Validates admin gate acknowledgments | Exit 1 on FAIL |
 | **6** | Feature Gates | Tracks feature gate changes (informational) | Always PASS |
+| **7** | Versions & Channels | Validates version availability in release channels and marketplaces (informational) | Always PASS |
 | **8** | OCM Version Gates | Validates OCM version gate configurations | Always PASS |
 
 See [Validation Checks](docs/validation-checks.md) for detailed information about each check.
@@ -165,7 +166,7 @@ See [Validation Checks](docs/validation-checks.md#version-resolution) for detail
 ## Documentation
 
 - [📘 Overview](docs/overview.md) - What gap analysis does and how it works
-- [✅ Validation Checks](docs/validation-checks.md) - Details about all 6 validation checks
+- [✅ Validation Checks](docs/validation-checks.md) - Details about all 8 validation checks
 - [🚀 Getting Started](docs/getting-started.md) - Installation and basic usage
 - [⚙️ Configuration](docs/configuration.md) - CLI arguments, environment variables, version resolution
 - [🔧 Development](docs/development.md) - Contributing and customization
@@ -217,6 +218,7 @@ Scripts are designed for CI/CD integration:
 | `gap-gcp-wif.py` | Successful execution | Execution error OR validation FAIL (checks 3-4) |
 | `gap-ocp-gate-ack.py` | Successful execution | Execution error OR validation FAIL (check 5) |
 | `gap-feature-gates.py` | Always on success | Execution error only (check 6 is informational) |
+| `gap-versions-channels.py` | Always on success | Execution error only (check 7 is informational) |
 | `gap-all.sh` | All checks 1-5 pass | Any check 1-5 fails |
 
 **Important:** Validation distinguishes between **errors** and **warnings**:

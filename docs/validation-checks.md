@@ -1,6 +1,6 @@
 # Validation Checks
 
-The gap analysis framework performs 6 validation checks across all scripts.
+The gap analysis framework performs 8 validation checks across all scripts.
 
 ## Check Numbering
 
@@ -14,6 +14,7 @@ All scripts use a consistent global check numbering system:
 | **4** | GCP WIF Admin Ack | Validates admin acknowledgment files in [managed-cluster-config](https://github.com/openshift/managed-cluster-config) `deploy/osd-cluster-acks/wif/{version}/` | Exit code 1 on FAIL |
 | **5** | OCP Admin Gates | Validates admin gates from cluster-version-operator are acknowledged in [managed-cluster-config](https://github.com/openshift/managed-cluster-config) `deploy/osd-cluster-acks/ocp/{version}/` (conditional: if gates exist, both files required; if no gates, both files must be absent) | Exit code 1 on FAIL |
 | **6** | Feature Gates | Analyzes feature gate changes from Sippy API. **Z-stream behavior:** When comparing z-stream versions (e.g., 4.21.15 → 4.21.16), shows default feature gates instead of differences, as z-stream updates should not change feature gates (informational only) | Always PASS (exit code 0) |
+| **7** | Versions & Channels | Validates OCP version availability across Cincinnati release channels (candidate/fast/stable), AWS/GCP marketplace availability (via OCM API), upgrade path existence, and cross-source consistency (informational only) | Always PASS (exit code 0) |
 | **8** | OCM Version Gates | Validates OCM version gate existence, configurations, and metadata for target OCP versions compared to baseline version gates | Always PASS (exit code 0) |
 
 
@@ -33,6 +34,9 @@ All scripts use a consistent global check numbering system:
 ### gap-ocm-version-gate.py
 - **Check 8:** OCM Version Gates Validation (Informational)
 
+### gap-versions-channels.py
+- **Check 7:** Versions & Channels Analysis (Informational)
+
 ### gap-feature-gates.py
 - **Check 6:** Feature Gates Analysis (Informational)
 
@@ -42,7 +46,8 @@ Runs all checks in order:
 2. GCP WIF (Checks 3-4)
 3. OCP Admin Gates (Check 5)
 4. OCM Version Gates (Check 8)
-5. Feature Gates (Check 6) - Always executed last
+5. Versions & Channels (Check 7)
+6. Feature Gates (Check 6) - Always executed last
 
 ## Output Format
 
