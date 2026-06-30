@@ -33,7 +33,7 @@ Optional Arguments:
   --target <version>       Target version (must be used with --baseline)
   --version <version>      Single version to analyze (auto-resolves baseline and target)
   --steps <steps>          Comma-separated list of steps to run (default: all)
-                           Available: aws,gcp,ocp,ocm-version-gate,feature-gates
+                           Available: aws,gcp,ocp,ocm-version-gate,versions-channels,feature-gates
                            Example: --steps aws,gcp (runs only AWS and GCP)
   --dry-run                Show resolved versions and exit without running analysis
   --verbose                Enable verbose logging
@@ -252,9 +252,9 @@ if [[ -n "$STEPS" ]]; then
         # Trim whitespace
         step=$(echo "$step" | xargs)
 
-        if [[ "$step" != "aws" ]] && [[ "$step" != "gcp" ]] && [[ "$step" != "ocp" ]] && [[ "$step" != "ocm-version-gate" ]] && [[ "$step" != "feature-gates" ]]; then
+        if [[ "$step" != "aws" ]] && [[ "$step" != "gcp" ]] && [[ "$step" != "ocp" ]] && [[ "$step" != "ocm-version-gate" ]] && [[ "$step" != "versions-channels" ]] && [[ "$step" != "feature-gates" ]]; then
             log_error "Invalid step: $step"
-            log_error "Valid steps are: aws, gcp, ocp, ocm-version-gate, feature-gates"
+            log_error "Valid steps are: aws, gcp, ocp, ocm-version-gate, versions-channels, feature-gates"
             exit 1
         fi
     done
@@ -262,7 +262,7 @@ if [[ -n "$STEPS" ]]; then
     log_info "Steps to run: ${STEPS_ARRAY[*]}"
 else
     # Default: run all steps
-    STEPS_ARRAY=("aws" "gcp" "ocp" "ocm-version-gate" "feature-gates")
+    STEPS_ARRAY=("aws" "gcp" "ocp" "ocm-version-gate" "feature-gates" "versions-channels")
 fi
 
 # Dry-run mode: show resolved versions and exit
@@ -282,7 +282,7 @@ if [[ "$DRY_RUN" == "true" ]]; then
     if [[ -n "$STEPS" ]]; then
         log_info "Steps to run: ${STEPS_ARRAY[*]}"
     else
-        log_info "Steps to run: all (aws, gcp, ocp, ocm-version-gate, feature-gates)"
+        log_info "Steps to run: all (aws, gcp, ocp, ocm-version-gate, versions-channels, feature-gates)"
     fi
     log_info "========================================="
     log_info "Exiting without running gap analysis"
@@ -318,6 +318,7 @@ main() {
             gcp) checks_desc="${checks_desc}GCP WIF, " ;;
             ocp) checks_desc="${checks_desc}OCP Gate Acknowledgments, " ;;
             ocm-version-gate) checks_desc="${checks_desc}OCM Version Gates, " ;;
+            versions-channels) checks_desc="${checks_desc}Versions & Channels, " ;;
             feature-gates) checks_desc="${checks_desc}Feature Gates, " ;;
         esac
     done
@@ -334,6 +335,7 @@ main() {
         ["gcp"]=0
         ["ocp"]=0
         ["ocm-version-gate"]=0
+        ["versions-channels"]=0
         ["feature-gates"]=0
     )
     declare -A check_status=(
@@ -341,6 +343,7 @@ main() {
         ["gcp"]=""
         ["ocp"]=""
         ["ocm-version-gate"]=""
+        ["versions-channels"]=""
         ["feature-gates"]=""
     )
     declare -A check_message=(
@@ -348,6 +351,7 @@ main() {
         ["gcp"]=""
         ["ocp"]=""
         ["ocm-version-gate"]=""
+        ["versions-channels"]=""
         ["feature-gates"]=""
     )
     declare -A check_diff_count=(
@@ -355,6 +359,7 @@ main() {
         ["gcp"]=0
         ["ocp"]=0
         ["ocm-version-gate"]=0
+        ["versions-channels"]=0
         ["feature-gates"]=0
     )
 
@@ -365,12 +370,14 @@ main() {
         ["ocp"]=3
         ["ocm-version-gate"]=4
         ["feature-gates"]=5
+        ["versions-channels"]=7
     )
     declare -A check_name=(
         ["aws"]="AWS STS Policy Gap"
         ["gcp"]="GCP WIF Template Gap"
         ["ocp"]="OCP Admin Gate Acknowledgments"
         ["ocm-version-gate"]="OCM Version Gates"
+        ["versions-channels"]="Versions & Channels"
         ["feature-gates"]="Feature Gates Gap"
     )
     declare -A check_type=(
@@ -378,6 +385,7 @@ main() {
         ["gcp"]="standard"
         ["ocp"]="standard"
         ["ocm-version-gate"]="informational"
+        ["versions-channels"]="informational"
         ["feature-gates"]="informational"
     )
     declare -A check_count_field=(
@@ -385,6 +393,7 @@ main() {
         ["gcp"]="differences_count"
         ["ocp"]="gates_count"
         ["ocm-version-gate"]="gates_count"
+        ["versions-channels"]="accepted_not_in_channel"
         ["feature-gates"]="total_changes"
     )
 
@@ -549,6 +558,26 @@ main() {
         check_diff_count[ocm-version-gate]=0
     fi
 
+    # Run Versions & Channels analysis (informational only - always passes)
+    if should_run_step "versions-channels"; then
+        log_info ""
+        log_info "Running Version & Channel Gap Analysis..."
+        if python3 "${SCRIPT_DIR}/gap-versions-channels.py" \
+            --baseline "$BASELINE" \
+            --target "$TARGET" \
+            --report-dir "$REPORT_DIR" \
+            $VERBOSE_FLAG 2>&1; then
+            check_results[versions-channels]=0
+        else
+            local exit_code=$?
+            check_results[versions-channels]=1
+            log_error "Versions & Channels analysis script failed with exit code $exit_code"
+        fi
+
+        # Read status file
+        read_check_status "versions-channels"
+    fi
+
     # Run Feature Gates analysis (informational only - always passes)
     # IMPORTANT: Feature Gates should always be executed last, even if new checks are added in the future
     if should_run_step "feature-gates"; then
@@ -592,7 +621,7 @@ main() {
     # If feature_gates_result=1, it means script execution error, which should fail
     local should_exit_fail=false
 
-    for step in aws gcp ocp ocm-version-gate feature-gates; do
+    for step in aws gcp ocp ocm-version-gate feature-gates versions-channels; do
         if should_run_step "$step" && [[ ${check_results[$step]} -eq 1 ]]; then
             should_exit_fail=true
             break
@@ -642,7 +671,7 @@ main() {
     done
 
     # Print individual check results
-    for step in aws gcp ocp ocm-version-gate feature-gates; do
+    for step in aws gcp ocp ocm-version-gate feature-gates versions-channels; do
         if should_run_step "$step"; then
             print_individual_check "$step" "${check_num[$step]}" "${check_name[$step]}" \
                 "${check_results[$step]}" "${check_diff_count[$step]}" "${check_message[$step]}" \
@@ -654,7 +683,7 @@ main() {
 
     # Overall status with warnings
     local has_warnings=false
-    for step in aws gcp ocp ocm-version-gate feature-gates; do
+    for step in aws gcp ocp ocm-version-gate feature-gates versions-channels; do
         if should_run_step "$step" && [[ ${check_results[$step]} -eq 0 ]] && [[ ${check_diff_count[$step]} -gt 0 ]]; then
             has_warnings=true
             break

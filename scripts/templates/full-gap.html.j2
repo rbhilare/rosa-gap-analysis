@@ -344,6 +344,13 @@
                 {% set info_count = info_count + 1 %}
             {% endif %}
 
+            {% if versions_channels %}
+                {% if versions_channels.validation_result == 'PASS' %}
+                    {% set success_count = success_count + 1 %}
+                {% endif %}
+                {% set info_count = info_count + 1 %}
+            {% endif %}
+
             {% if ocm_version_gate %}
                 {% if ocm_version_gate.validation_result == 'FAIL' %}
                     {% set critical_count = critical_count + 1 %}
@@ -352,7 +359,6 @@
                 {% endif %}
                 {% set info_count = info_count + 1 %}
             {% endif %}
-
 
             <div class="status-badges">
                 {% if critical_count > 0 %}
@@ -549,6 +555,24 @@
                         </td>
                     </tr>
                     {% endif %}
+                    {% if versions_channels %}
+                    <tr>
+                        <td><strong>CHECK #7:</strong> Versions & Channels</td>
+                        <td><span class="added">✅ PASS</span> (Info)</td>
+                        <td style="text-align: center;">{{ versions_channels.summary.accepted_not_in_channel }}</td>
+                        <td style="text-align: center;">-</td>
+                        <td>
+                            {% if versions_channels.summary.total_upgrade_paths > 0 %}
+                            {{ versions_channels.summary.total_upgrade_paths }} upgrade paths
+                            {% else %}-{% endif %}
+                            {% if versions_channels.summary.marketplace_available %}
+                            | AWS: {% if versions_channels.summary.target_aws_marketplace %}✓{% else %}✗{% endif %}
+                            GCP: {% if versions_channels.summary.target_gcp_marketplace %}✓{% else %}✗{% endif %}
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endif %}
+
                     {% if ocm_version_gate %}
                     <tr>
                         <td><strong>CHECK #8:</strong> OCM Version Gates</td>
@@ -1258,6 +1282,95 @@
             {% endif %}
             {% endif %}
 
+
+            {% if versions_channels %}
+            <h2 id="versions-channels">CHECK #7: Versions & Channels</h2>
+
+            <div class="alert success">
+                <strong>✅ Informational Analysis</strong>
+                <ul style="margin: 10px 0 0 0; padding-left: 20px;">
+                    <li><strong>Baseline {{ versions_channels.baseline }}:</strong> channels: {{ versions_channels.summary.baseline_channels|join(', ') or 'none' }}</li>
+                    <li><strong>Target {{ versions_channels.target }}:</strong> highest channel: {{ versions_channels.summary.target_highest_channel }}</li>
+                    <li><strong>Upgrade paths:</strong> {{ versions_channels.summary.total_upgrade_paths }}{% if versions_channels.summary.direct_path_exists %} (direct path exists){% endif %}</li>
+                    {% if versions_channels.summary.accepted_not_in_channel > 0 %}
+                    <li><strong>{{ versions_channels.summary.accepted_not_in_channel }}</strong> version(s) accepted in CI but not in any channel</li>
+                    {% endif %}
+                </ul>
+            </div>
+
+            <h3>Channel Availability ({{ versions_channels.target_minor }})</h3>
+            <table>
+                <thead>
+                    <tr><th>Channel</th><th>Available</th><th>Versions</th><th>Contains Target</th></tr>
+                </thead>
+                <tbody>
+                    {% for ch in ['candidate', 'fast', 'stable'] %}
+                    {% set info = versions_channels.channel_availability.target.channels.get(ch, {}) %}
+                    <tr>
+                        <td><strong>{{ ch }}-{{ versions_channels.target_minor }}</strong></td>
+                        <td>{% if info.get('available') %}<span class="added">Yes</span>{% else %}<span class="removed">No</span>{% endif %}</td>
+                        <td style="text-align: center;">{{ info.get('version_count', 0) }}</td>
+                        <td>{% if ch in versions_channels.summary.target_channels %}<span class="added">✓</span>{% else %}✗{% endif %}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+
+            {% if versions_channels.marketplace is defined and versions_channels.marketplace.available %}
+            <h3>Marketplace Availability</h3>
+            <table>
+                <thead>
+                    <tr><th>Version</th><th>AWS (ROSA)</th><th>GCP Marketplace</th><th>Channel Group</th></tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td><strong>Baseline:</strong> {{ versions_channels.baseline }}</td>
+                        <td>{% if versions_channels.marketplace.aws.baseline.rosa_enabled is none %}—{% elif versions_channels.marketplace.aws.baseline.rosa_enabled %}<span class="added">Available</span>{% else %}<span class="removed">Not available</span>{% endif %}</td>
+                        <td>{% if versions_channels.marketplace.gcp.baseline.gcp_marketplace_enabled is none %}—{% elif versions_channels.marketplace.gcp.baseline.gcp_marketplace_enabled %}<span class="added">Available</span>{% else %}<span class="removed">Not available</span>{% endif %}</td>
+                        <td>{{ versions_channels.marketplace.aws.baseline.channel_group or '-' }}</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Target:</strong> {{ versions_channels.target }}</td>
+                        <td>{% if versions_channels.marketplace.aws.target.rosa_enabled is none %}—{% elif versions_channels.marketplace.aws.target.rosa_enabled %}<span class="added">Available</span>{% else %}<span class="removed">Not available</span>{% endif %}</td>
+                        <td>{% if versions_channels.marketplace.gcp.target.gcp_marketplace_enabled is none %}—{% elif versions_channels.marketplace.gcp.target.gcp_marketplace_enabled %}<span class="added">Available</span>{% else %}<span class="removed">Not available</span>{% endif %}</td>
+                        <td>{{ versions_channels.marketplace.aws.target.channel_group or '-' }}</td>
+                    </tr>
+                </tbody>
+            </table>
+            {% elif versions_channels.marketplace is defined and not versions_channels.marketplace.available %}
+            <h3>Marketplace Availability</h3>
+            <p><em>Skipped — OCM not authenticated</em></p>
+            {% endif %}
+
+            {% if versions_channels.upgrade_paths.sample_paths %}
+            <details>
+                <summary>Sample Upgrade Paths ({{ versions_channels.upgrade_paths.sample_paths|length }} of {{ versions_channels.summary.total_upgrade_paths }})</summary>
+                <div class="content-wrapper">
+                <table>
+                    <thead><tr><th>From</th><th></th><th>To</th></tr></thead>
+                    <tbody>
+                        {% for path in versions_channels.upgrade_paths.sample_paths %}
+                        <tr>
+                            <td>{{ path['from'] }}</td>
+                            <td style="text-align: center;">→</td>
+                            <td>{{ path.to }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+                </div>
+            </details>
+            {% endif %}
+
+            {% if versions_channels.cross_source.observations %}
+            <h3>Cross-Source Observations</h3>
+            <ul>
+                {% for obs in versions_channels.cross_source.observations %}
+                <li>{{ obs }}</li>
+                {% endfor %}
+            </ul>
+            {% endif %}
+            {% endif %}
 
             <div class="footer">
                 Generated by <a href="https://github.com/openshift-online/rosa-gap-analysis" target="_blank" style="color: #007bff; text-decoration: none;">ROSA Gap Analysis</a> automation
