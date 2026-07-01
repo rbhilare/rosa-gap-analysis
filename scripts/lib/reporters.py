@@ -37,7 +37,7 @@ def generate_status_report(check_number: int, check_name: str, status: str,
     Generate a structured status file for gap-all.sh to consume.
 
     Args:
-        check_number: Numeric check identifier (1-6)
+        check_number: Numeric check identifier (1-8)
         check_name: Human-readable check name
         status: PASS, FAIL, WARNING, ERROR, SKIP
         details: Dictionary containing check-specific details

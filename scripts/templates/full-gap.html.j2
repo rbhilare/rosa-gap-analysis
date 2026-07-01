@@ -434,17 +434,6 @@
                 {% set info_count = info_count + 1 %}
             {% endif %}
 
-            {% if ga_validation %}
-                {% if ga_validation.validation_result == 'FAIL' %}
-                    {% set critical_count = critical_count + 1 %}
-                {% elif ga_validation.validation_result == 'PASS' %}
-                    {% set success_count = success_count + 1 %}
-                {% endif %}
-                {% if ga_validation.metrics.warnings > 0 %}
-                    {% set warning_count = warning_count + 1 %}
-                {% endif %}
-            {% endif %}
-
             {% if ocm_version_gate %}
                 {% if ocm_version_gate.validation_result == 'FAIL' %}
                     {% set critical_count = critical_count + 1 %}
@@ -623,36 +612,10 @@
                         </td>
                     </tr>
                     {% endif %}
-                    {% if feature_gates %}
-                    {% if feature_gates.comparison %}
-                    {% set fg_added = feature_gates.comparison.added|length %}
-                    {% set fg_removed = feature_gates.comparison.removed|length %}
-                    {% set fg_default = feature_gates.comparison.newly_enabled_by_default|length %}
-                    {% else %}
-                    {% set fg_added = 0 %}
-                    {% set fg_removed = 0 %}
-                    {% set fg_default = 0 %}
-                    {% endif %}
-                    <tr>
-                        <td><strong>CHECK #6:</strong> Feature Gates</td>
-                        <td><span class="added">✅ PASS</span> (Info)</td>
-                        <td style="text-align: center;">{{ fg_added }}</td>
-                        <td style="text-align: center;">{{ fg_removed }}</td>
-                        <td>
-                            {% if fg_default > 0 %}
-                            {{ fg_default }} newly default
-                            {% else %}
-                                {% if fg_added + fg_removed > 0 %}
-                                {{ fg_added + fg_removed }} total changes
-                                {% else %}-{% endif %}
-                            {% endif %}
-                        </td>
-                    </tr>
-                    {% endif %}
                     {% if versions_channels %}
                     <tr>
-                        <td><strong>CHECK #7:</strong> Versions & Channels</td>
-                        <td><span class="added">✅ PASS</span> (Info)</td>
+                        <td><strong>CHECK #6:</strong> Versions & Channels</td>
+                        <td><span class="added">✅ PASS</span></td>
                         <td style="text-align: center;">{{ versions_channels.summary.accepted_not_in_channel }}</td>
                         <td style="text-align: center;">-</td>
                         <td>
@@ -669,10 +632,10 @@
 
                     {% if ocm_version_gate %}
                     <tr>
-                        <td><strong>CHECK #8:</strong> OCM Version Gates</td>
+                        <td><strong>CHECK #7:</strong> OCM Version Gates</td>
                         <td>
                             {% if ocm_version_gate.validation_result == 'PASS' %}
-                            <span class="added">✅ PASS</span> (Info)
+                            <span class="added">✅ PASS</span>
                             {% else %}
                             <span class="removed">❌ FAIL</span>
                             {% endif %}
@@ -689,21 +652,33 @@
                     </tr>
                     {% endif %}
 
-                    {% if ga_validation %}
+                    {% if feature_gates %}
+                    {% if feature_gates.comparison %}
+                    {% set fg_added = feature_gates.comparison.added|length %}
+                    {% set fg_removed = feature_gates.comparison.removed|length %}
+                    {% set fg_default = feature_gates.comparison.newly_enabled_by_default|length %}
+                    {% else %}
+                    {% set fg_added = 0 %}
+                    {% set fg_removed = 0 %}
+                    {% set fg_default = 0 %}
+                    {% endif %}
                     <tr>
-                        <td><strong>CHECK #9:</strong> GA Readiness Validation</td>
-                        <td>{% if ga_validation.validation_result == 'PASS' %}<span class="added">✅ PASS</span>{% else %}<span class="removed">❌ FAIL</span>{% endif %}</td>
-                        <td style="text-align: center;">-</td>
-                        <td style="text-align: center;">-</td>
+                        <td><strong>CHECK #8:</strong> Feature Gates</td>
+                        <td><span class="added">✅ PASS</span> (Info)</td>
+                        <td style="text-align: center;">{{ fg_added }}</td>
+                        <td style="text-align: center;">{{ fg_removed }}</td>
                         <td>
-                            {% if ga_validation.validation_result == 'PASS' %}
-                            All checks passed ({{ ga_validation.metrics.total }} checks)
+                            {% if fg_default > 0 %}
+                            {{ fg_default }} newly default
                             {% else %}
-                            {{ ga_validation.metrics.critical_failures }} critical failure(s), {{ ga_validation.metrics.warnings }} warning(s)
+                                {% if fg_added + fg_removed > 0 %}
+                                {{ fg_added + fg_removed }} total changes
+                                {% else %}-{% endif %}
                             {% endif %}
                         </td>
                     </tr>
                     {% endif %}
+
                 </tbody>
             </table>
 
@@ -1078,8 +1053,192 @@
             {% endif %}
             {% endif %}
 
+            {% if versions_channels %}
+            <h2 id="versions-channels">CHECK #6: Versions & Channels</h2>
+
+            <div class="alert success">
+                <strong>✅ Informational Analysis</strong>
+                <ul style="margin: 10px 0 0 0; padding-left: 20px;">
+                    <li><strong>Baseline {{ versions_channels.baseline }}:</strong> channels: {{ versions_channels.summary.baseline_channels|join(', ') or 'none' }}</li>
+                    <li><strong>Target {{ versions_channels.target }}:</strong> highest channel: {{ versions_channels.summary.target_highest_channel }}</li>
+                    <li><strong>Upgrade paths:</strong> {{ versions_channels.summary.total_upgrade_paths }}{% if versions_channels.summary.direct_path_exists %} (direct path exists){% endif %}</li>
+                    {% if versions_channels.summary.accepted_not_in_channel > 0 %}
+                    <li><strong>{{ versions_channels.summary.accepted_not_in_channel }}</strong> version(s) accepted in CI but not in any channel</li>
+                    {% endif %}
+                </ul>
+            </div>
+
+            <h3>Channel Availability ({{ versions_channels.target_minor }})</h3>
+            <table>
+                <thead>
+                    <tr><th>Channel</th><th>Available</th><th>Versions</th><th>Contains Target</th></tr>
+                </thead>
+                <tbody>
+                    {% for ch in ['candidate', 'fast', 'stable'] %}
+                    {% set info = versions_channels.channel_availability.target.channels.get(ch, {}) %}
+                    <tr>
+                        <td><strong>{{ ch }}-{{ versions_channels.target_minor }}</strong></td>
+                        <td>{% if info.get('available') %}<span class="added">Yes</span>{% else %}<span class="removed">No</span>{% endif %}</td>
+                        <td style="text-align: center;">{{ info.get('version_count', 0) }}</td>
+                        <td>{% if ch in versions_channels.summary.target_channels %}<span class="added">✓</span>{% else %}✗{% endif %}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+
+            {% if versions_channels.marketplace is defined and versions_channels.marketplace.available %}
+            <h3>Marketplace Availability</h3>
+            <table>
+                <thead>
+                    <tr><th>Version</th><th>AWS (ROSA)</th><th>GCP Marketplace</th><th>Channel Group</th></tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td><strong>Baseline:</strong> {{ versions_channels.baseline }}</td>
+                        <td>{% if versions_channels.marketplace.aws.baseline.rosa_enabled is none %}—{% elif versions_channels.marketplace.aws.baseline.rosa_enabled %}<span class="added">Available</span>{% else %}<span class="removed">Not available</span>{% endif %}</td>
+                        <td>{% if versions_channels.marketplace.gcp.baseline.gcp_marketplace_enabled is none %}—{% elif versions_channels.marketplace.gcp.baseline.gcp_marketplace_enabled %}<span class="added">Available</span>{% else %}<span class="removed">Not available</span>{% endif %}</td>
+                        <td>{{ versions_channels.marketplace.aws.baseline.channel_group or '-' }}</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Target:</strong> {{ versions_channels.target }}</td>
+                        <td>{% if versions_channels.marketplace.aws.target.rosa_enabled is none %}—{% elif versions_channels.marketplace.aws.target.rosa_enabled %}<span class="added">Available</span>{% else %}<span class="removed">Not available</span>{% endif %}</td>
+                        <td>{% if versions_channels.marketplace.gcp.target.gcp_marketplace_enabled is none %}—{% elif versions_channels.marketplace.gcp.target.gcp_marketplace_enabled %}<span class="added">Available</span>{% else %}<span class="removed">Not available</span>{% endif %}</td>
+                        <td>{{ versions_channels.marketplace.aws.target.channel_group or '-' }}</td>
+                    </tr>
+                </tbody>
+            </table>
+            {% elif versions_channels.marketplace is defined and not versions_channels.marketplace.available %}
+            <h3>Marketplace Availability</h3>
+            <p><em>Skipped — OCM not authenticated</em></p>
+            {% endif %}
+
+            {% if versions_channels.upgrade_paths.sample_paths %}
+            <details>
+                <summary>Sample Upgrade Paths ({{ versions_channels.upgrade_paths.sample_paths|length }} of {{ versions_channels.summary.total_upgrade_paths }})</summary>
+                <div class="content-wrapper">
+                <table>
+                    <thead><tr><th>From</th><th></th><th>To</th></tr></thead>
+                    <tbody>
+                        {% for path in versions_channels.upgrade_paths.sample_paths %}
+                        <tr>
+                            <td>{{ path['from'] }}</td>
+                            <td style="text-align: center;">→</td>
+                            <td>{{ path.to }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+                </div>
+            </details>
+            {% endif %}
+
+            {% if versions_channels.cross_source.observations %}
+            <h3>Cross-Source Observations</h3>
+            <ul>
+                {% for obs in versions_channels.cross_source.observations %}
+                <li>{{ obs }}</li>
+                {% endfor %}
+            </ul>
+            {% endif %}
+            {% endif %}
+
+            {% if ocm_version_gate %}
+            <h2 id="ocm-version-gates">CHECK #7: OCM Version Gate Details</h2>
+
+            {% if ocm_version_gate.is_mock_data %}
+            <div style="background-color: #fff3cd; border-left: 4px solid #ffc107; padding: 15px; margin: 20px 0; border-radius: 5px;">
+                <h4 style="color: #856404; margin-top: 0;">⚠️ Mock/Simulated Data Mode</h4>
+                <p>This report was generated using simulated OCM data because no OCM token or CLI authentication was detected.</p>
+            </div>
+            {% endif %}
+
+            {% if not ocm_version_gate.configuration_validation.valid %}
+            <div style="background-color: #f8d7da; border-left: 4px solid #dc3545; padding: 15px; margin: 20px 0; border-radius: 5px;">
+                <h4 style="color: #721c24; margin-top: 0;">❌ Configuration Validation Errors</h4>
+                <ul style="margin: 0; padding-left: 20px; color: #721c24;">
+                    {% for error in ocm_version_gate.configuration_validation.errors %}
+                    <li>{{ error }}</li>
+                    {% endfor %}
+                </ul>
+            </div>
+            {% endif %}
+
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 25px;">
+                <div style="background-color: #f8f9fa; border: 1px solid #e9ecef; padding: 15px; border-radius: 5px;">
+                    <h4 style="margin-top: 0; color: #495057;">Active Gates Summary</h4>
+                    <p style="margin: 5px 0;"><strong>Baseline Version:</strong> <code>{{ ocm_version_gate.baseline_minor }}</code></p>
+                    <p style="margin: 5px 0;"><strong>Baseline Gates Count:</strong> <span class="badge {% if ocm_version_gate.gates_count.baseline > 0 %}success{% else %}warning{% endif %}" style="padding: 2px 8px; border-radius: 3px; font-weight: bold;">{{ ocm_version_gate.gates_count.baseline }}</span></p>
+                    <p style="margin: 5px 0;"><strong>Target Version:</strong> <code>{{ ocm_version_gate.target_minor }}</code></p>
+                    <p style="margin: 5px 0;"><strong>Target Gates Count:</strong> <span class="badge {% if ocm_version_gate.gates_count.target > 0 %}success{% else %}error{% endif %}" style="padding: 2px 8px; border-radius: 3px; font-weight: bold;">{{ ocm_version_gate.gates_count.target }}</span></p>
+                </div>
+                <div style="background-color: #f8f9fa; border: 1px solid #e9ecef; padding: 15px; border-radius: 5px;">
+                    <h4 style="margin-top: 0; color: #495057;">Gate Changes</h4>
+                    <p style="margin: 5px 0;"><strong>New Gates Configured:</strong> <span style="font-weight: bold; color: #28a745;">{{ ocm_version_gate.comparison.new_gates_count }}</span></p>
+                    <p style="margin: 5px 0;"><strong>Deprecated/Old Gates:</strong> <span style="font-weight: bold; color: #dc3545;">{{ ocm_version_gate.comparison.deprecated_gates_count }}</span></p>
+                </div>
+            </div>
+
+            <!-- Target Gates Details -->
+            <h3>Target Version Gates ({{ ocm_version_gate.target_minor }}.x)</h3>
+            {% if ocm_version_gate.gates_count.target > 0 %}
+                {% for gate in ocm_version_gate.target_gates %}
+                <div style="border: 1px solid #dee2e6; border-radius: 6px; padding: 15px; margin-bottom: 15px; background-color: #fff;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #e9ecef; padding-bottom: 8px; margin-bottom: 10px;">
+                        <span style="font-family: monospace; font-weight: bold; background-color: #f1f3f5; padding: 2px 6px; border-radius: 4px;">{{ gate.label }}</span>
+                        <span style="font-size: 0.85em; color: #6c757d; font-family: monospace;">ID: {{ gate.id }}</span>
+                    </div>
+                    <div style="font-size: 1.05em; font-weight: 500; margin-bottom: 10px;">{{ gate.description }}</div>
+                    <div style="display: flex; flex-wrap: wrap; gap: 10px; font-size: 0.9em; color: #495057; margin-bottom: 10px;">
+                        <span style="background-color: #e9ecef; padding: 2px 8px; border-radius: 4px;">Value: {{ gate.value }}</span>
+                        <span style="background-color: #e9ecef; padding: 2px 8px; border-radius: 4px;">Prefix: {{ gate.version_raw_id_prefix }}</span>
+                        {% if gate.sts_only %}
+                        <span style="background-color: #cff4fc; color: #055160; padding: 2px 8px; border-radius: 4px; font-weight: 500;">STS Only</span>
+                        {% else %}
+                        <span style="background-color: #e2e3e5; padding: 2px 8px; border-radius: 4px;">All Clusters (Non-STS &amp; STS)</span>
+                        {% endif %}
+                        {% if gate.documentation_url %}
+                        <a href="{{ gate.documentation_url }}" target="_blank" style="background-color: #e8f0fe; color: #1a73e8; padding: 2px 8px; border-radius: 4px; text-decoration: none; font-weight: 500;">Docs ↗</a>
+                        {% endif %}
+                    </div>
+                    {% if gate.warning_message %}
+                    <div style="background-color: #fdf2f2; border-left: 3px solid #dc3545; padding: 10px; border-radius: 4px; font-size: 0.95em; color: #a12020;">
+                        <strong>Warning:</strong> {{ gate.warning_message }}
+                    </div>
+                    {% endif %}
+                </div>
+                {% endfor %}
+            {% else %}
+                <div style="background-color: #fdf2f2; border: 1px solid #f5c2c2; padding: 15px; border-radius: 5px; color: #721c24; margin-bottom: 25px;">
+                    <strong>Missing Target Version Gates:</strong> No version gates are active for target minor version prefix <code>{{ ocm_version_gate.target_minor }}</code> in OCM.
+                </div>
+            {% endif %}
+
+            <!-- Baseline Gates Details -->
+            <h3>Baseline Version Gates ({{ ocm_version_gate.baseline_minor }}.x)</h3>
+            {% if ocm_version_gate.gates_count.baseline > 0 %}
+                {% for gate in ocm_version_gate.baseline_gates %}
+                <div style="border: 1px solid #dee2e6; border-radius: 6px; padding: 15px; margin-bottom: 15px; background-color: #fdfdfd; opacity: 0.85;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #e9ecef; padding-bottom: 8px; margin-bottom: 10px;">
+                        <span style="font-family: monospace; font-weight: bold; background-color: #e9ecef; padding: 2px 6px; border-radius: 4px;">{{ gate.label }}</span>
+                        <span style="font-size: 0.85em; color: #6c757d; font-family: monospace;">ID: {{ gate.id }}</span>
+                    </div>
+                    <div style="font-size: 1.05em; color: #495057; margin-bottom: 10px;">{{ gate.description }}</div>
+                    <div style="display: flex; flex-wrap: wrap; gap: 10px; font-size: 0.9em; color: #6c757d;">
+                        <span>Value: {{ gate.value }}</span>
+                        <span>Prefix: {{ gate.version_raw_id_prefix }}</span>
+                        {% if gate.sts_only %}
+                        <span style="background-color: #cff4fc; color: #055160; padding: 2px 8px; border-radius: 4px; font-size: 0.85em;">STS Only</span>
+                        {% endif %}
+                    </div>
+                </div>
+                {% endfor %}
+            {% else %}
+                <p style="color: #6c757d; font-style: italic;">No version gates were detected for baseline version {{ ocm_version_gate.baseline_minor }}.x.</p>
+            {% endif %}
+            {% endif %}
+
             {% if feature_gates %}
-            <h2 id="feature-gates">CHECK #6: Feature Gate Details</h2>
+            <h2 id="feature-gates">CHECK #8: Feature Gate Details (Info)</h2>
 
             {% if feature_gates.is_z_stream %}
             <div style="background-color: #d1ecf1; border-left: 4px solid #0c5460; padding: 15px; margin: 20px 0; border-radius: 5px;">
@@ -1278,7 +1437,6 @@
             {% endif %}
 
             <script>
-                // Search functionality
                 document.getElementById('featureGateSearch').addEventListener('input', function(e) {
                     const searchTerm = e.target.value.toLowerCase();
                     const items = document.querySelectorAll('.feature-gate-item');
@@ -1295,233 +1453,42 @@
             </script>
             {% endif %}
             {% endif %}
-            {% endif %}
 
-
-            {% if versions_channels %}
-            <h2 id="versions-channels">CHECK #7: Versions & Channels</h2>
-
-            <div class="alert success">
-                <strong>✅ Informational Analysis</strong>
-                <ul style="margin: 10px 0 0 0; padding-left: 20px;">
-                    <li><strong>Baseline {{ versions_channels.baseline }}:</strong> channels: {{ versions_channels.summary.baseline_channels|join(', ') or 'none' }}</li>
-                    <li><strong>Target {{ versions_channels.target }}:</strong> highest channel: {{ versions_channels.summary.target_highest_channel }}</li>
-                    <li><strong>Upgrade paths:</strong> {{ versions_channels.summary.total_upgrade_paths }}{% if versions_channels.summary.direct_path_exists %} (direct path exists){% endif %}</li>
-                    {% if versions_channels.summary.accepted_not_in_channel > 0 %}
-                    <li><strong>{{ versions_channels.summary.accepted_not_in_channel }}</strong> version(s) accepted in CI but not in any channel</li>
-                    {% endif %}
-                </ul>
-            </div>
-
-            <h3>Channel Availability ({{ versions_channels.target_minor }})</h3>
-            <table>
-                <thead>
-                    <tr><th>Channel</th><th>Available</th><th>Versions</th><th>Contains Target</th></tr>
-                </thead>
-                <tbody>
-                    {% for ch in ['candidate', 'fast', 'stable'] %}
-                    {% set info = versions_channels.channel_availability.target.channels.get(ch, {}) %}
-                    <tr>
-                        <td><strong>{{ ch }}-{{ versions_channels.target_minor }}</strong></td>
-                        <td>{% if info.get('available') %}<span class="added">Yes</span>{% else %}<span class="removed">No</span>{% endif %}</td>
-                        <td style="text-align: center;">{{ info.get('version_count', 0) }}</td>
-                        <td>{% if ch in versions_channels.summary.target_channels %}<span class="added">✓</span>{% else %}✗{% endif %}</td>
-                    </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
-
-            {% if versions_channels.marketplace is defined and versions_channels.marketplace.available %}
-            <h3>Marketplace Availability</h3>
-            <table>
-                <thead>
-                    <tr><th>Version</th><th>AWS (ROSA)</th><th>GCP Marketplace</th><th>Channel Group</th></tr>
-                </thead>
-                <tbody>
-                    <tr>
-                        <td><strong>Baseline:</strong> {{ versions_channels.baseline }}</td>
-                        <td>{% if versions_channels.marketplace.aws.baseline.rosa_enabled is none %}—{% elif versions_channels.marketplace.aws.baseline.rosa_enabled %}<span class="added">Available</span>{% else %}<span class="removed">Not available</span>{% endif %}</td>
-                        <td>{% if versions_channels.marketplace.gcp.baseline.gcp_marketplace_enabled is none %}—{% elif versions_channels.marketplace.gcp.baseline.gcp_marketplace_enabled %}<span class="added">Available</span>{% else %}<span class="removed">Not available</span>{% endif %}</td>
-                        <td>{{ versions_channels.marketplace.aws.baseline.channel_group or '-' }}</td>
-                    </tr>
-                    <tr>
-                        <td><strong>Target:</strong> {{ versions_channels.target }}</td>
-                        <td>{% if versions_channels.marketplace.aws.target.rosa_enabled is none %}—{% elif versions_channels.marketplace.aws.target.rosa_enabled %}<span class="added">Available</span>{% else %}<span class="removed">Not available</span>{% endif %}</td>
-                        <td>{% if versions_channels.marketplace.gcp.target.gcp_marketplace_enabled is none %}—{% elif versions_channels.marketplace.gcp.target.gcp_marketplace_enabled %}<span class="added">Available</span>{% else %}<span class="removed">Not available</span>{% endif %}</td>
-                        <td>{{ versions_channels.marketplace.aws.target.channel_group or '-' }}</td>
-                    </tr>
-                </tbody>
-            </table>
-            {% elif versions_channels.marketplace is defined and not versions_channels.marketplace.available %}
-            <h3>Marketplace Availability</h3>
-            <p><em>Skipped — OCM not authenticated</em></p>
-            {% endif %}
-
-            {% if versions_channels.upgrade_paths.sample_paths %}
+            {% if feature_gates.default_hypershift_gates %}
             <details>
-                <summary>Sample Upgrade Paths ({{ versions_channels.upgrade_paths.sample_paths|length }} of {{ versions_channels.summary.total_upgrade_paths }})</summary>
-                <div class="content-wrapper">
-                <table>
-                    <thead><tr><th>From</th><th></th><th>To</th></tr></thead>
-                    <tbody>
-                        {% for path in versions_channels.upgrade_paths.sample_paths %}
-                        <tr>
-                            <td>{{ path['from'] }}</td>
-                            <td style="text-align: center;">→</td>
-                            <td>{{ path.to }}</td>
-                        </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
+                <summary>🛡️ Default:Hypershift Gates in {{ feature_gates.target }} ({{ feature_gates.default_hypershift_gates|length }})</summary>
+                <div style="background-color: #e8f4fd; padding: 15px; border-left: 4px solid #0c5460; margin: 10px 0;">
+                    <p><em>These feature gates are enabled by default with <strong>Default:Hypershift</strong> in the target version <code>{{ feature_gates.target }}</code>.</em></p>
+                </div>
+                <div style="margin: 10px 0;">
+                    <table class="stats-table" style="width: 100%;">
+                        <thead>
+                            <tr>
+                                <th style="text-align: left; width: 5%;">#</th>
+                                <th style="text-align: left;">Feature Gate Name</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for gate in feature_gates.default_hypershift_gates %}
+                            <tr>
+                                <td style="text-align: left; color: #6c757d;">{{ loop.index }}</td>
+                                <td><code>{{ gate }}</code></td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
                 </div>
             </details>
             {% endif %}
 
-            {% if versions_channels.cross_source.observations %}
-            <h3>Cross-Source Observations</h3>
-            <ul>
-                {% for obs in versions_channels.cross_source.observations %}
-                <li>{{ obs }}</li>
-                {% endfor %}
-            </ul>
-            {% endif %}
-            {% endif %}
-
-            {% if ocm_version_gate %}
-            <h2 id="ocm-version-gates">CHECK #8: OCM Version Gate Details</h2>
-
-            {% if ocm_version_gate.is_mock_data %}
-            <div style="background-color: #fff3cd; border-left: 4px solid #ffc107; padding: 15px; margin: 20px 0; border-radius: 5px;">
-                <h4 style="color: #856404; margin-top: 0;">⚠️ Mock/Simulated Data Mode</h4>
-                <p>This report was generated using simulated OCM data because no OCM token or CLI authentication was detected.</p>
+            {% if feature_gates.total_hypershift_gates is defined %}
+            <div style="margin-top: 15px; padding: 10px 15px; background-color: #f8f9fa; border-radius: 5px; font-size: 0.95em; color: #495057;">
+                <strong>Total Hypershift-relevant gates:</strong> {{ feature_gates.total_hypershift_gates }}
+                &nbsp;|&nbsp;
+                <strong>Default:Hypershift:</strong> {{ feature_gates.default_hypershift_gates|length }}
             </div>
             {% endif %}
 
-            {% if not ocm_version_gate.configuration_validation.valid %}
-            <div style="background-color: #f8d7da; border-left: 4px solid #dc3545; padding: 15px; margin: 20px 0; border-radius: 5px;">
-                <h4 style="color: #721c24; margin-top: 0;">❌ Configuration Validation Errors</h4>
-                <ul style="margin: 0; padding-left: 20px; color: #721c24;">
-                    {% for error in ocm_version_gate.configuration_validation.errors %}
-                    <li>{{ error }}</li>
-                    {% endfor %}
-                </ul>
-            </div>
-            {% endif %}
-
-            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 25px;">
-                <div style="background-color: #f8f9fa; border: 1px solid #e9ecef; padding: 15px; border-radius: 5px;">
-                    <h4 style="margin-top: 0; color: #495057;">Active Gates Summary</h4>
-                    <p style="margin: 5px 0;"><strong>Baseline Version:</strong> <code>{{ ocm_version_gate.baseline_minor }}</code></p>
-                    <p style="margin: 5px 0;"><strong>Baseline Gates Count:</strong> <span class="badge {% if ocm_version_gate.gates_count.baseline > 0 %}success{% else %}warning{% endif %}" style="padding: 2px 8px; border-radius: 3px; font-weight: bold;">{{ ocm_version_gate.gates_count.baseline }}</span></p>
-                    <p style="margin: 5px 0;"><strong>Target Version:</strong> <code>{{ ocm_version_gate.target_minor }}</code></p>
-                    <p style="margin: 5px 0;"><strong>Target Gates Count:</strong> <span class="badge {% if ocm_version_gate.gates_count.target > 0 %}success{% else %}error{% endif %}" style="padding: 2px 8px; border-radius: 3px; font-weight: bold;">{{ ocm_version_gate.gates_count.target }}</span></p>
-                </div>
-                <div style="background-color: #f8f9fa; border: 1px solid #e9ecef; padding: 15px; border-radius: 5px;">
-                    <h4 style="margin-top: 0; color: #495057;">Gate Changes</h4>
-                    <p style="margin: 5px 0;"><strong>New Gates Configured:</strong> <span style="font-weight: bold; color: #28a745;">{{ ocm_version_gate.comparison.new_gates_count }}</span></p>
-                    <p style="margin: 5px 0;"><strong>Deprecated/Old Gates:</strong> <span style="font-weight: bold; color: #dc3545;">{{ ocm_version_gate.comparison.deprecated_gates_count }}</span></p>
-                </div>
-            </div>
-
-            <!-- Target Gates Details -->
-            <h3>Target Version Gates ({{ ocm_version_gate.target_minor }}.x)</h3>
-            {% if ocm_version_gate.gates_count.target > 0 %}
-                {% for gate in ocm_version_gate.target_gates %}
-                <div style="border: 1px solid #dee2e6; border-radius: 6px; padding: 15px; margin-bottom: 15px; background-color: #fff;">
-                    <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #e9ecef; padding-bottom: 8px; margin-bottom: 10px;">
-                        <span style="font-family: monospace; font-weight: bold; background-color: #f1f3f5; padding: 2px 6px; border-radius: 4px;">{{ gate.label }}</span>
-                        <span style="font-size: 0.85em; color: #6c757d; font-family: monospace;">ID: {{ gate.id }}</span>
-                    </div>
-                    <div style="font-size: 1.05em; font-weight: 500; margin-bottom: 10px;">{{ gate.description }}</div>
-                    <div style="display: flex; flex-wrap: wrap; gap: 10px; font-size: 0.9em; color: #495057; margin-bottom: 10px;">
-                        <span style="background-color: #e9ecef; padding: 2px 8px; border-radius: 4px;">Value: {{ gate.value }}</span>
-                        <span style="background-color: #e9ecef; padding: 2px 8px; border-radius: 4px;">Prefix: {{ gate.version_raw_id_prefix }}</span>
-                        {% if gate.sts_only %}
-                        <span style="background-color: #cff4fc; color: #055160; padding: 2px 8px; border-radius: 4px; font-weight: 500;">STS Only</span>
-                        {% else %}
-                        <span style="background-color: #e2e3e5; padding: 2px 8px; border-radius: 4px;">All Clusters (Non-STS &amp; STS)</span>
-                        {% endif %}
-                        {% if gate.documentation_url %}
-                        <a href="{{ gate.documentation_url }}" target="_blank" style="background-color: #e8f0fe; color: #1a73e8; padding: 2px 8px; border-radius: 4px; text-decoration: none; font-weight: 500;">Docs ↗</a>
-                        {% endif %}
-                    </div>
-                    {% if gate.warning_message %}
-                    <div style="background-color: #fdf2f2; border-left: 3px solid #dc3545; padding: 10px; border-radius: 4px; font-size: 0.95em; color: #a12020;">
-                        <strong>Warning:</strong> {{ gate.warning_message }}
-                    </div>
-                    {% endif %}
-                </div>
-                {% endfor %}
-            {% else %}
-                <div style="background-color: #fdf2f2; border: 1px solid #f5c2c2; padding: 15px; border-radius: 5px; color: #721c24; margin-bottom: 25px;">
-                    <strong>Missing Target Version Gates:</strong> No version gates are active for target minor version prefix <code>{{ ocm_version_gate.target_minor }}</code> in OCM.
-                </div>
-            {% endif %}
-
-            <!-- Baseline Gates Details -->
-            <h3>Baseline Version Gates ({{ ocm_version_gate.baseline_minor }}.x)</h3>
-            {% if ocm_version_gate.gates_count.baseline > 0 %}
-                {% for gate in ocm_version_gate.baseline_gates %}
-                <div style="border: 1px solid #dee2e6; border-radius: 6px; padding: 15px; margin-bottom: 15px; background-color: #fdfdfd; opacity: 0.85;">
-                    <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #e9ecef; padding-bottom: 8px; margin-bottom: 10px;">
-                        <span style="font-family: monospace; font-weight: bold; background-color: #e9ecef; padding: 2px 6px; border-radius: 4px;">{{ gate.label }}</span>
-                        <span style="font-size: 0.85em; color: #6c757d; font-family: monospace;">ID: {{ gate.id }}</span>
-                    </div>
-                    <div style="font-size: 1.05em; color: #495057; margin-bottom: 10px;">{{ gate.description }}</div>
-                    <div style="display: flex; flex-wrap: wrap; gap: 10px; font-size: 0.9em; color: #6c757d;">
-                        <span>Value: {{ gate.value }}</span>
-                        <span>Prefix: {{ gate.version_raw_id_prefix }}</span>
-                        {% if gate.sts_only %}
-                        <span style="background-color: #cff4fc; color: #055160; padding: 2px 8px; border-radius: 4px; font-size: 0.85em;">STS Only</span>
-                        {% endif %}
-                    </div>
-                </div>
-                {% endfor %}
-            {% else %}
-                <p style="color: #6c757d; font-style: italic;">No version gates were detected for baseline version {{ ocm_version_gate.baseline_minor }}.x.</p>
-            {% endif %}
-            {% endif %}
-
-            {% if ga_validation %}
-            <h2 id="ga-validation">CHECK #9: GA Readiness Validation Details</h2>
-
-            <h3>Validation Status</h3>
-            <div class="alert {% if ga_validation.validation_result == 'FAIL' %}error{% else %}success{% endif %}">
-                <strong>{% if ga_validation.validation_result == 'FAIL' %}❌ GA Readiness Validation Failed{% else %}✅ GA Readiness Validation Passed{% endif %}</strong>
-                <ul style="margin: 10px 0 0 0; padding-left: 20px;">
-                    <li><strong>Overall Result:</strong> {{ ga_validation.validation_result }}</li>
-                    <li><strong>Total Checks:</strong> {{ ga_validation.metrics.total }}</li>
-                    <li><strong>Passed Checks:</strong> {{ ga_validation.metrics.total - ga_validation.metrics.failures - ga_validation.metrics.warnings }}</li>
-                    <li><strong>Warnings:</strong> {{ ga_validation.metrics.warnings }}</li>
-                    <li><strong>Critical Failures:</strong> {{ ga_validation.metrics.critical_failures }}</li>
-                </ul>
-            </div>
-
-            <h3>Checklist Details</h3>
-            <div class="checklist">
-                {% for check_id, check_data in ga_validation.results | dictsort %}
-                    <div class="check-item">
-                        <div class="check-header">
-                            <div class="check-title-group">
-                                <span class="check-id">{{ check_id }}</span>
-                                <span class="check-title">{{ check_data.name }}</span>
-                            </div>
-                            <div>
-                                {% if check_data.status == 'PASS' %}
-                                    <span class="status-badge-val pass">PASS</span>
-                                {% elif check_data.status == 'WARN' %}
-                                    <span class="status-badge-val warn">WARN</span>
-                                {% else %}
-                                    <span class="status-badge-val fail">FAIL</span>
-                                {% endif %}
-                            </div>
-                        </div>
-                        <div class="check-body">
-                            <pre class="check-msg">{{ check_data.message }}</pre>
-                        </div>
-                    </div>
-                {% endfor %}
-            </div>
             {% endif %}
 
             <div class="footer">

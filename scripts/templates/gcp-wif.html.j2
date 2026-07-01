@@ -137,7 +137,7 @@
             <p><strong>Target Version:</strong> <code>{{ target }}</code></p>
         </div>
 
-        <h2>GCP Marketplace Enablement (VAL_05 GCP Portion)</h2>
+        <h2>GCP Marketplace Enablement</h2>
         {% if gcp_marketplace %}
         <div class="alert {% if gcp_marketplace.status == 'PASS' %}success{% elif gcp_marketplace.status == 'WARN' %}warning{% else %}error{% endif %}">
             <h3>{% if gcp_marketplace.status == 'PASS' %}✅{% elif gcp_marketplace.status == 'WARN' %}⚠️{% else %}❌{% endif %} GCP Marketplace Status</h3>

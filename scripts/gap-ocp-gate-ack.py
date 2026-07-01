@@ -369,7 +369,16 @@ def print_analysis(analysis, baseline, target):
 
 
 def check_ocm_version_gates(target_version):
-    """Verify OCM version gates configuration (VAL_01)."""
+    """Verify OCM version gates configuration. Scoped to 4.x versions only."""
+    major = target_version.split(".")[0]
+    if major != "4":
+        log_info(f"Skipping OCM version gates check for {major}.x (only applicable to 4.x versions).")
+        return {
+            'status': 'PASS',
+            'message': f'OCM version gates check skipped for {major}.x (only applicable to 4.x).',
+            'gates': []
+        }
+
     ocm_path = shutil.which("ocm")
     if not ocm_path:
         log_warning("OCM CLI binary missing in PATH. Skipped version gates check.")
@@ -549,7 +558,7 @@ Exit Codes:
             for error in structure_validation['errors']:
                 log_error(f"  - {error}")
 
-        # Check OCM Version Gates (VAL_01)
+        # Check OCM Version Gates
         log_info("\nChecking OCM Version Gates...")
         ocm_gates_result = check_ocm_version_gates(target_full)
 

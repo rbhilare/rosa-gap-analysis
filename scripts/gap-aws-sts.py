@@ -11,6 +11,7 @@ from datetime import datetime
 from pathlib import Path
 # Add lib directory to path
 sys.path.insert(0, str(Path(__file__).parent / 'lib'))
+sys.path.insert(0, str(Path(__file__).parent))
 
 from common import log_info, log_success, log_error, log_warning, check_command, is_pre_ga_version
 from openshift_releases import resolve_openshift_version, extract_minor_version
@@ -25,103 +26,9 @@ from ack_validation import (
 )
 
 
-def check_aws_marketplace_enablement(target_version):
-    """Verify AWS marketplace enablement for ROSA Classic and ROSA HCP (VAL_05 AWS portion)."""
-    major_minor = ".".join(target_version.split(".")[:2])
-    channels = ["stable", "fast", "candidate"]
-    try:
-        minor_val = int(major_minor.split(".")[1])
-        if minor_val % 2 == 0:
-            channels.append("eus")
-    except Exception:
-        pass
-
-    rosa_path = shutil.which("rosa")
-    if not rosa_path:
-        log_warning("ROSA CLI binary missing in PATH. Skipped AWS Marketplace enablement check.")
-        return {
-            'status': 'WARN',
-            'message': 'ROSA CLI binary missing in PATH. Skipped AWS Marketplace enablement check.',
-            'channels': {}
-        }
-
-    # Perform detailed checks using 'rosa' CLI
-    log_info(f"Performing live AWS Marketplace verification using 'rosa' CLI across channels {channels}...")
-    cli_results = {}
-    for chan in channels:
-        cli_results[chan] = {
-            "rosa_classic": False,
-            "rosa_hcp": False,
-            "rosa_classic_output": "",
-            "rosa_hcp_output": ""
-        }
-
-    for chan in channels:
-        # 1. ROSA Classic
-        cmd_classic = ["rosa", "list", "versions", "--channel-group", chan]
-        proc_classic = subprocess.run(cmd_classic, capture_output=True, text=True, check=False)
-        if proc_classic.returncode != 0:
-            log_warning(f"Failed to query 'rosa list versions' for channel group '{chan}' (is 'rosa' CLI logged in?).")
-            return {
-                'status': 'WARN',
-                'message': f"Failed to query 'rosa list versions' (returncode={proc_classic.returncode}). Ensure 'rosa' CLI is logged in.",
-                'channels': {}
-            }
-
-        for line in proc_classic.stdout.splitlines():
-            parts = line.strip().split()
-            if parts and (parts[0] == target_version or parts[0].startswith(major_minor)):
-                cli_results[chan]["rosa_classic"] = True
-                cli_results[chan]["rosa_classic_output"] = parts[0]
-                break
-
-        # 2. ROSA HCP
-        cmd_hcp = ["rosa", "list", "versions", "--hosted-cp", "--channel-group", chan]
-        proc_hcp = subprocess.run(cmd_hcp, capture_output=True, text=True, check=False)
-        if proc_hcp.returncode == 0:
-            for line in proc_hcp.stdout.splitlines():
-                parts = line.strip().split()
-                if parts and (parts[0] == target_version or parts[0].startswith(major_minor)):
-                    cli_results[chan]["rosa_hcp"] = True
-                    cli_results[chan]["rosa_hcp_output"] = parts[0]
-                    break
-
-    all_passed = True
-    for chan in channels:
-        res = cli_results[chan]
-        if not (res["rosa_classic"] and res["rosa_hcp"]):
-            all_passed = False
-
-    if all_passed:
-        log_success(f"Successfully verified AWS Marketplace enablement via 'rosa' CLI across channels {channels}.")
-        return {
-            'status': 'PASS',
-            'message': f"Successfully verified AWS Marketplace enablement across channels: {', '.join(channels)}.",
-            'channels': cli_results
-        }
-    else:
-        # Check if partially enabled
-        partially_enabled = False
-        for chan in channels:
-            res = cli_results[chan]
-            if res["rosa_classic"] or res["rosa_hcp"]:
-                partially_enabled = True
-                break
-        
-        if partially_enabled:
-            log_warning("AWS Marketplace enablement is partially complete. Some channels are missing.")
-            return {
-                'status': 'WARN',
-                'message': "AWS Marketplace enablement is partially complete. Some channels are missing.",
-                'channels': cli_results
-            }
-        else:
-            log_error("AWS Marketplace enablement checks failed. No ROSA versions detected in any channel.")
-            return {
-                'status': 'FAIL',
-                'message': "AWS Marketplace enablement checks failed. No ROSA versions detected in any channel.",
-                'channels': cli_results
-            }
+import importlib
+_gap_marketplace = importlib.import_module("gap-marketplace")
+check_aws_marketplace_enablement = _gap_marketplace.check_aws_marketplace_enablement
 
 
 def validate_sts_acknowledgment(baseline, target, comparison=None, baseline_cr_dir=None, target_cr_dir=None):
@@ -631,7 +538,7 @@ Exit Codes:
     mcc_sts_url = f"https://github.com/openshift/managed-cluster-config/tree/master/resources/sts/{target_minor}"
     mcc_ack_url = f"https://github.com/openshift/managed-cluster-config/tree/master/deploy/osd-cluster-acks/sts/{target_minor}"
 
-    # Check AWS Marketplace Enablement (VAL_05 AWS portion)
+    # Check AWS Marketplace Enablement
     log_info("\nChecking AWS Marketplace Enablement...")
     aws_marketplace_result = check_aws_marketplace_enablement(target)
 

@@ -137,7 +137,7 @@
             <p><strong>Target Version:</strong> <code>{{ target }}</code></p>
         </div>
 
-        <h2>AWS Marketplace Enablement (VAL_05 AWS Portion)</h2>
+        <h2>AWS Marketplace Enablement</h2>
         {% if aws_marketplace %}
         <div class="alert {% if aws_marketplace.status == 'PASS' %}success{% elif aws_marketplace.status == 'WARN' %}warning{% else %}error{% endif %}">
             <h3>{% if aws_marketplace.status == 'PASS' %}✅{% elif aws_marketplace.status == 'WARN' %}⚠️{% else %}❌{% endif %} AWS Marketplace Status</h3>

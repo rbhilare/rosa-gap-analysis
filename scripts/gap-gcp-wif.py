@@ -11,6 +11,7 @@ from datetime import datetime
 from pathlib import Path
 # Add lib directory to path
 sys.path.insert(0, str(Path(__file__).parent / 'lib'))
+sys.path.insert(0, str(Path(__file__).parent))
 
 from common import log_info, log_success, log_error, log_warning, check_command, is_pre_ga_version
 from openshift_releases import resolve_openshift_version, extract_minor_version
@@ -25,90 +26,9 @@ from ack_validation import (
 )
 
 
-def check_gcp_marketplace_enablement(target_version):
-    """Verify GCP marketplace enablement (VAL_05 GCP portion)."""
-    major_minor = ".".join(target_version.split(".")[:2])
-    channels = ["stable", "fast", "candidate"]
-    try:
-        minor_val = int(major_minor.split(".")[1])
-        if minor_val % 2 == 0:
-            channels.append("eus")
-    except Exception:
-        pass
-
-    ocm_path = shutil.which("ocm")
-    if not ocm_path:
-        log_warning("OCM CLI binary missing in PATH. Skipped GCP Marketplace enablement check.")
-        return {
-            'status': 'WARN',
-            'message': 'OCM CLI binary missing in PATH. Skipped GCP Marketplace enablement check.',
-            'channels': {}
-        }
-
-    # Perform detailed checks using 'ocm' CLI
-    log_info(f"Performing live GCP Marketplace verification using 'ocm' CLI across channels {channels}...")
-    cli_results = {}
-    for chan in channels:
-        cli_results[chan] = {
-            "gcp_marketplace": False,
-            "gcp_marketplace_output": ""
-        }
-
-    for chan in channels:
-        # 1. GCP Marketplace
-        cmd_gcp = ["ocm", "list", "versions", "--channel-group", chan, "--marketplace-gcp=true"]
-        proc_gcp = subprocess.run(cmd_gcp, capture_output=True, text=True, check=False)
-        if proc_gcp.returncode != 0:
-            log_warning(f"Failed to query 'ocm' CLI versions for channel group '{chan}' (is 'ocm' CLI logged in?).")
-            return {
-                'status': 'WARN',
-                'message': f"Failed to query 'ocm' CLI (returncode={proc_gcp.returncode}). Ensure 'ocm' CLI is logged in.",
-                'channels': {}
-            }
-
-        for line in proc_gcp.stdout.splitlines():
-            parts = line.strip().split()
-            if parts and (parts[0] == target_version or parts[0].startswith(major_minor)):
-                cli_results[chan]["gcp_marketplace"] = True
-                cli_results[chan]["gcp_marketplace_output"] = parts[0]
-                break
-
-    all_passed = True
-    for chan in channels:
-        res = cli_results[chan]
-        if not res["gcp_marketplace"]:
-            all_passed = False
-
-    if all_passed:
-        log_success(f"Successfully verified GCP Marketplace enablement via 'ocm' CLI across channels {channels}.")
-        return {
-            'status': 'PASS',
-            'message': f"Successfully verified GCP Marketplace enablement across channels: {', '.join(channels)}.",
-            'channels': cli_results
-        }
-    else:
-        # Check if partially enabled
-        partially_enabled = False
-        for chan in channels:
-            res = cli_results[chan]
-            if res["gcp_marketplace"]:
-                partially_enabled = True
-                break
-        
-        if partially_enabled:
-            log_warning("GCP Marketplace enablement is partially complete. Some channels are missing.")
-            return {
-                'status': 'WARN',
-                'message': "GCP Marketplace enablement is partially complete. Some channels are missing.",
-                'channels': cli_results
-            }
-        else:
-            log_error("GCP Marketplace enablement checks failed. No GCP versions detected in any channel.")
-            return {
-                'status': 'FAIL',
-                'message': "GCP Marketplace enablement checks failed. No GCP versions detected in any channel.",
-                'channels': cli_results
-            }
+import importlib
+_gap_marketplace = importlib.import_module("gap-marketplace")
+check_gcp_marketplace_enablement = _gap_marketplace.check_gcp_marketplace_enablement
 
 
 def validate_wif_acknowledgment(baseline, target, added_actions=None):
@@ -682,7 +602,7 @@ Exit Codes:
     mcc_wif_url = f"https://github.com/openshift/managed-cluster-config/tree/master/resources/wif/{target_minor}"
     mcc_ack_url = f"https://github.com/openshift/managed-cluster-config/tree/master/deploy/osd-cluster-acks/wif/{target_minor}"
 
-    # Check GCP Marketplace Enablement (VAL_05 GCP portion)
+    # Check GCP Marketplace Enablement
     log_info("\nChecking GCP Marketplace Enablement...")
     gcp_marketplace_result = check_gcp_marketplace_enablement(target)
 

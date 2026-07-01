@@ -11,6 +11,7 @@ Container Platform (OCP) release can be marked General Availability (GA) on ROSA
 
 import argparse
 import datetime
+import importlib
 import json
 import os
 import re
@@ -20,9 +21,13 @@ import sys
 import tempfile
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
+from urllib.request import Request, urlopen
+from urllib.error import URLError, HTTPError
 
-# Add lib directory to path
-sys.path.insert(0, str(Path(__file__).parent / 'lib'))
+# Add shared lib directory and parent scripts directory to path
+_scripts_dir = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(_scripts_dir / 'lib'))
+sys.path.insert(0, str(_scripts_dir))
 from common import (
     log_info,
     log_success,
@@ -32,42 +37,50 @@ from common import (
     is_pre_ga_version,
 )
 from openshift_releases import resolve_openshift_version
-from reporters import generate_html_report, generate_json_report, generate_status_report
+from reporters import generate_html_report, generate_json_report
+
+_marketplace = importlib.import_module("gap-marketplace")
+_ocm_gate = importlib.import_module("gap-ocm-version-gate")
+_versions_channels = importlib.import_module("gap-versions-channels")
 
 
 class GAReadinessValidator:
-    def __init__(self, version: str, report_dir: str):
+    def __init__(self, version: str, report_dir: str, baseline: str = None):
         self.version = version
+        self.baseline = baseline
         self.report_dir = report_dir
         self.results = {}
         self.warnings = 0
         self.failures = 0
         self.critical_failures = 0
 
-    def log_status(self, check_id: str, name: str, status: str, message: str):
+    def log_status(self, name: str, status: str, message: str, extra: dict = None):
         if status == "PASS":
-            log_success(f"{check_id}: {name} - {message}")
+            log_success(f"{name} - {message}")
         elif status == "WARN":
-            log_warning(f"{check_id}: {name} - {message}")
+            log_warning(f"{name} - {message}")
             self.warnings += 1
         else:
-            log_error(f"{check_id}: {name} - {message}")
+            log_error(f"{name} - {message}")
             self.failures += 1
 
-        self.results[check_id] = {
+        entry = {
             "name": name,
             "status": status,
             "message": message
         }
+        if extra:
+            entry.update(extra)
+        self.results[name] = entry
 
     # ==================== VALIDATION CHECKS ====================
 
     def check_channel_availability(self):
-        """VAL_02: Verify channel availability (candidate, fast, stable)."""
+        """Verify channel availability (candidate, fast, stable)."""
         name = "Channel Availability"
         ocm_path = shutil.which("ocm")
         if not ocm_path:
-            self.log_status("VAL_02", name, "WARN", "OCM CLI binary missing in PATH. Skipped channel availability check.")
+            self.log_status(name, "WARN", "OCM CLI binary missing in PATH. Skipped channel availability check.")
             return
 
         query_version = self.version
@@ -84,7 +97,7 @@ class GAReadinessValidator:
             proc = subprocess.run(cmd, capture_output=True, text=True, check=False, timeout=15)
             if proc.returncode != 0:
                 err_msg = proc.stderr.strip() if proc.stderr else "No stderr output"
-                self.log_status("VAL_02", name, "WARN", f"Failed to query OCM versions via 'ocm' CLI (exit code {proc.returncode}): {err_msg}")
+                self.log_status(name, "WARN", f"Failed to query OCM versions via 'ocm' CLI (exit code {proc.returncode}): {err_msg}")
                 return
 
             versions_data = json.loads(proc.stdout)
@@ -98,18 +111,18 @@ class GAReadinessValidator:
             missing_channels = required_channels - channels_found
 
             if not missing_channels:
-                self.log_status("VAL_02", name, "PASS", f"Version {self.version} is available in channels: {', '.join(required_channels)}.")
+                self.log_status(name, "PASS", f"Version {self.version} is available in channels: {', '.join(required_channels)}.")
             else:
                 self.critical_failures += 1
-                self.log_status("VAL_02", name, "FAIL", f"Version {self.version} is missing from channels: {', '.join(missing_channels)} (Found: {', '.join(channels_found) or 'None'}).")
+                self.log_status(name, "FAIL", f"Version {self.version} is missing from channels: {', '.join(missing_channels)} (Found: {', '.join(channels_found) or 'None'}).")
         except subprocess.TimeoutExpired:
-            self.log_status("VAL_02", name, "WARN", "Query to OCM versions timed out (network issue or interactive login prompt). Skipped check.")
+            self.log_status(name, "WARN", "Query to OCM versions timed out (network issue or interactive login prompt). Skipped check.")
         except Exception as e:
             self.critical_failures += 1
-            self.log_status("VAL_02", name, "FAIL", f"Failed checking version channel availability: {e}")
+            self.log_status(name, "FAIL", f"Failed checking version channel availability: {e}")
 
     def check_rosa_cli_compatibility(self):
-        """VAL_03: Check ROSA CLI detection and listing across channels."""
+        """Check ROSA CLI detection and listing across channels."""
         name = "ROSA CLI Compatibility"
         try:
             # Check if rosa is installed
@@ -117,7 +130,7 @@ class GAReadinessValidator:
             if version_check.returncode != 0:
                 err_msg = version_check.stderr.strip() if version_check.stderr else "No stderr output"
                 self.critical_failures += 1
-                self.log_status("VAL_03", name, "FAIL", f"ROSA CLI is not installed or execution failed (exit code {version_check.returncode}): {err_msg}")
+                self.log_status(name, "FAIL", f"ROSA CLI is not installed or execution failed (exit code {version_check.returncode}): {err_msg}")
                 return
 
             cli_version = version_check.stdout.strip().split("\n")[0]
@@ -130,7 +143,7 @@ class GAReadinessValidator:
                 list_versions = subprocess.run(["rosa", "list", "versions", "--channel-group", channel], capture_output=True, text=True, check=False, timeout=15)
                 if list_versions.returncode != 0:
                     err_msg = list_versions.stderr.strip() if list_versions.stderr else "No stderr output"
-                    self.log_status("VAL_03", name, "WARN", f"ROSA CLI ({cli_version}) failed to query channel '{channel}' (auth or network error, exit code {list_versions.returncode}): {err_msg}")
+                    self.log_status(name, "WARN", f"ROSA CLI ({cli_version}) failed to query channel '{channel}' (auth or network error, exit code {list_versions.returncode}): {err_msg}")
                     return
                 if self.version in (list_versions.stdout or ""):
                     found_channels.append(channel)
@@ -138,22 +151,211 @@ class GAReadinessValidator:
                     missing_channels.append(channel)
 
             if not missing_channels:
-                self.log_status("VAL_03", name, "PASS", f"ROSA CLI ({cli_version}) successfully detected target version {self.version} across all channels: {', '.join(channels)}.")
+                self.log_status(name, "PASS", f"ROSA CLI ({cli_version}) successfully detected target version {self.version} across all channels: {', '.join(channels)}.")
             elif found_channels:
-                self.log_status("VAL_03", name, "WARN", f"ROSA CLI ({cli_version}) detected target version {self.version} in: {', '.join(found_channels)}, but missed in: {', '.join(missing_channels)}.")
+                self.log_status(name, "WARN", f"ROSA CLI ({cli_version}) detected target version {self.version} in: {', '.join(found_channels)}, but missed in: {', '.join(missing_channels)}.")
             else:
-                self.log_status("VAL_03", name, "WARN", f"ROSA CLI ({cli_version}) did not list version {self.version} in any channel group (candidate, fast, stable). Check channel status.")
+                self.log_status(name, "WARN", f"ROSA CLI ({cli_version}) did not list version {self.version} in any channel group (candidate, fast, stable). Check channel status.")
         except subprocess.TimeoutExpired:
-            self.log_status("VAL_03", name, "WARN", "ROSA CLI version query timed out (network issue or interactive login prompt). Skipped check.")
+            self.log_status(name, "WARN", "ROSA CLI version query timed out (network issue or interactive login prompt). Skipped check.")
         except FileNotFoundError:
             self.critical_failures += 1
-            self.log_status("VAL_03", name, "FAIL", "ROSA CLI binary not found. Please install ROSA CLI.")
+            self.log_status(name, "FAIL", "ROSA CLI binary not found. Please install ROSA CLI.")
         except Exception as e:
             self.critical_failures += 1
-            self.log_status("VAL_03", name, "FAIL", f"ROSA CLI compatibility validation failed: {e}")
+            self.log_status(name, "FAIL", f"ROSA CLI compatibility validation failed: {e}")
+
+    def check_version_gates(self):
+        """Verify OCM version gates are configured for the target release."""
+        name = "Version Gates"
+        major_minor = ".".join(self.version.split(".")[:2])
+
+        try:
+            gates = _ocm_gate.fetch_ocm_version_gates()
+            if gates is None:
+                self.log_status(name, "WARN", "Could not fetch OCM version gates (CLI missing or auth issue). Skipped check.")
+                return
+
+            target_pattern = re.compile(rf"\b{re.escape(major_minor)}\b")
+            target_gates = [
+                g for g in gates
+                if major_minor == g.get("version_raw_id_prefix", "")
+                or (g.get("value") and target_pattern.search(g["value"]))
+            ]
+
+            gate_items = [
+                {
+                    "label": g.get("label", "unknown"),
+                    "description": g.get("description", "No description"),
+                    "sts_only": g.get("sts_only", False),
+                    "documentation_url": g.get("documentation_url", ""),
+                    "warning_message": g.get("warning_message", ""),
+                }
+                for g in target_gates
+            ]
+
+            if target_gates:
+                gate_details = [f"{gi['label']} (STS-only: {gi['sts_only']}) — {gi['description'][:100]}" for gi in gate_items]
+                details_str = "\n   ".join(gate_details)
+                self.log_status(
+                    name, "PASS",
+                    f"Found {len(target_gates)} version gate(s) for {major_minor}:\n   {details_str}",
+                    extra={"gates": gate_items}
+                )
+            else:
+                self.log_status(
+                    name, "WARN",
+                    f"No version gates found for {major_minor} in OCM. Gates may not be configured yet."
+                )
+        except Exception as e:
+            self.critical_failures += 1
+            self.log_status(name, "FAIL", f"Failed checking version gates: {e}")
+
+    def check_upgrade_paths(self):
+        """Verify upgrade paths from supported versions are available via Cincinnati."""
+        name = "Upgrade Paths"
+
+        try:
+            from openshift_releases import extract_minor_version
+            target_minor = extract_minor_version(self.version)
+            baseline_minor = extract_minor_version(self.baseline) if self.baseline else target_minor
+
+            is_z_stream = (baseline_minor == target_minor)
+            baseline_full = self.baseline or self.version
+            target_full = self.version
+
+            upgrade_result = _versions_channels.analyze_upgrade_paths(
+                baseline_minor, target_minor, baseline_full, target_full
+            )
+
+            total_paths = upgrade_result.get('total_paths', 0)
+            channel_queried = upgrade_result.get('channel_queried', 'unknown')
+            direct_path = upgrade_result.get('direct_path_exists', False)
+            paths_to = upgrade_result.get('paths_to_target', 0)
+            paths_from = upgrade_result.get('paths_from_baseline', 0)
+            sample_paths = upgrade_result.get('sample_paths', [])[:10]
+
+            upgrade_data = {
+                "baseline": baseline_full,
+                "target": target_full,
+                "is_z_stream": is_z_stream,
+                "channel_queried": channel_queried,
+                "total_paths": total_paths,
+                "paths_from_baseline": paths_from,
+                "paths_to_target": paths_to,
+                "direct_path_exists": direct_path,
+                "sample_paths": sample_paths,
+            }
+
+            details = [f"Channel: {channel_queried}"]
+            details.append(f"Total paths ({baseline_minor} \u2192 {target_minor}): {total_paths}")
+            details.append(f"Paths from {baseline_full}: {paths_from}")
+            details.append(f"Paths to {target_full}: {paths_to}")
+            details.append(f"Direct {baseline_full} \u2192 {target_full}: {'Yes' if direct_path else 'No'}")
+            if sample_paths:
+                samples = [f"{p['from']} \u2192 {p['to']}" for p in sample_paths[:5]]
+                details.append(f"Sample: {', '.join(samples)}")
+            details_str = "\n   ".join(details)
+
+            if total_paths > 0:
+                self.log_status(
+                    name, "PASS",
+                    f"Found {total_paths} upgrade path(s) in {channel_queried}.\n   {details_str}",
+                    extra={"upgrade": upgrade_data}
+                )
+            else:
+                self.log_status(
+                    name, "WARN",
+                    f"No upgrade paths found in {channel_queried}. "
+                    f"Version may not be in channel graph yet.\n   {details_str}",
+                    extra={"upgrade": upgrade_data}
+                )
+        except Exception as e:
+            self.log_status(name, "WARN", f"Upgrade paths check failed: {e}")
+
+    def check_ci_job_status(self):
+        """Check gap analysis Prow CI job status for the target version."""
+        name = "CI Job Status"
+        prow_url = "https://prow.ci.openshift.org"
+        job_name = "periodic-ci-openshift-online-rosa-gap-analysis-main-nightly"
+
+        try:
+            history_url = f"{prow_url}/job-history/gs/test-platform-results/logs/{job_name}"
+            req = Request(history_url, headers={'User-Agent': 'gap-analysis-script'})
+            with urlopen(req, timeout=30) as response:
+                html_content = response.read().decode('utf-8', errors='replace')
+
+            match = re.search(r'var allBuilds = (\[.*?\]);', html_content, re.DOTALL)
+            if not match:
+                self.log_status(name, "WARN", f"Could not parse Prow job history from {history_url}. Page format may have changed.")
+                return
+
+            builds = json.loads(match.group(1))
+            if not builds:
+                self.log_status(name, "WARN", "No Prow job executions found.")
+                return
+
+            recent_builds = builds[:5]
+            latest = recent_builds[0]
+            latest_status = latest.get("Result", "UNKNOWN").upper()
+            latest_id = latest.get("ID", "unknown")
+            latest_started = latest.get("Started", "unknown")
+
+            spyglass = latest.get("SpyglassLink", "")
+            job_url = f"{prow_url}/{spyglass}" if spyglass else history_url
+
+            ci_runs = []
+            for b in recent_builds:
+                b_status = b.get("Result", "UNKNOWN").upper()
+                spy = b.get("SpyglassLink", "")
+                ci_runs.append({
+                    "id": b.get("ID", "?"),
+                    "status": "PASS" if b_status == "SUCCESS" else "FAIL" if b_status in ("FAILURE", "ERROR") else b_status,
+                    "started": b.get("Started", "?"),
+                    "url": f"{prow_url}/{spy}" if spy else history_url,
+                })
+
+            ci_data = {
+                "job_name": job_name,
+                "history_url": history_url,
+                "runs": ci_runs,
+            }
+
+            status_counts = {}
+            for r in ci_runs:
+                status_counts[r["status"]] = status_counts.get(r["status"], 0) + 1
+
+            details = [f"#{r['id']} [{r['status']}] ({r['started']})" for r in ci_runs]
+            details_str = "\n   ".join(details)
+
+            if latest_status == "SUCCESS":
+                self.log_status(
+                    name, "PASS",
+                    f"Latest Prow job #{latest_id} passed ({latest_started}). "
+                    f"Last {len(ci_runs)} runs: {status_counts}.\n   {details_str}\n   Job: {job_url}",
+                    extra={"ci": ci_data}
+                )
+            elif latest_status in ("FAILURE", "ERROR"):
+                self.log_status(
+                    name, "WARN",
+                    f"Latest Prow job #{latest_id} failed ({latest_started}). "
+                    f"Last {len(ci_runs)} runs: {status_counts}.\n   {details_str}\n   Job: {job_url}",
+                    extra={"ci": ci_data}
+                )
+            else:
+                self.log_status(
+                    name, "WARN",
+                    f"Latest Prow job #{latest_id} status: {latest_status} ({latest_started}). "
+                    f"Last {len(ci_runs)} runs: {status_counts}.\n   {details_str}\n   Job: {job_url}",
+                    extra={"ci": ci_data}
+                )
+        except (URLError, HTTPError) as e:
+            self.log_status(name, "WARN", f"Could not reach Prow API ({e}). Network access to {prow_url} may be required.")
+        except Exception as e:
+            self.log_status(name, "WARN", f"CI job status check encountered an error: {e}")
 
     def check_documentation_status(self):
-        """VAL_04: Verify SOPs and runbooks updates."""
+        """Verify SOPs and runbooks updates."""
         name = "SOP & Runbooks Update Status"
         major_minor = ".".join(self.version.split(".")[:2])
         target_url = "https://github.com/openshift/ops-sop/blob/master/v4/howto/gap-analysis.md"
@@ -234,7 +436,6 @@ class GAReadinessValidator:
         if not content:
             errors_str = " | ".join(git_errors)
             self.log_status(
-                "VAL_04", 
                 name, 
                 "WARN", 
                 f"Could not retrieve Gap Analysis SOP using remote git fetch. Details: {errors_str}"
@@ -315,25 +516,62 @@ class GAReadinessValidator:
         
         if regex_passed and date_passed:
             self.log_status(
-                "VAL_04",
                 name,
                 "PASS",
                 f"Verified '{major_minor}' is documented in Gap Analysis SOP ({source_info}).{detailed_explanation}"
             )
         else:
             self.log_status(
-                "VAL_04",
                 name,
                 "WARN",
                 f"Gap Analysis SOP validation failed one or more criteria for '{major_minor}' ({source_info}).{detailed_explanation}"
             )
 
+    def check_aws_marketplace_enablement(self):
+        """Verify AWS marketplace enablement for ROSA Classic and ROSA HCP."""
+        name = "AWS Marketplace Enablement"
+        result = _marketplace.check_aws_marketplace_enablement(self.version)
+        status = result.get('status', 'FAIL')
+        message = result.get('message', 'Unknown error')
+        channels = result.get('channels', {})
+
+        if channels:
+            details = []
+            for chan, info in sorted(channels.items()):
+                classic = "Yes" if info.get("rosa_classic") else "No"
+                hcp = "Yes" if info.get("rosa_hcp") else "No"
+                details.append(f"{chan}: Classic={classic}, HCP={hcp}")
+            message += "\n   " + "\n   ".join(details)
+
+        if status == 'FAIL':
+            self.critical_failures += 1
+        self.log_status(name, status, message, extra={"channels": channels} if channels else None)
+
+    def check_gcp_marketplace_enablement(self):
+        """Verify GCP marketplace enablement across channels."""
+        name = "GCP Marketplace Enablement"
+        result = _marketplace.check_gcp_marketplace_enablement(self.version)
+        status = result.get('status', 'FAIL')
+        message = result.get('message', 'Unknown error')
+        channels = result.get('channels', {})
+
+        if channels:
+            details = []
+            for chan, info in sorted(channels.items()):
+                gcp = "Yes" if info.get("gcp_marketplace") else "No"
+                details.append(f"{chan}: GCP={gcp}")
+            message += "\n   " + "\n   ".join(details)
+
+        if status == 'FAIL':
+            self.critical_failures += 1
+        self.log_status(name, status, message, extra={"channels": channels} if channels else None)
+
     def check_gcp_wif_compatibility(self):
-        """VAL_05: Verify GCP WIF template compatibility in OCM wif-configs."""
+        """Verify GCP WIF template compatibility in OCM wif-configs."""
         name = "GCP WIF Template Compatibility"
         ocm_path = shutil.which("ocm")
         if not ocm_path:
-            self.log_status("VAL_05", name, "WARN", "OCM CLI binary missing in PATH. Skipped GCP WIF template compatibility check.")
+            self.log_status(name, "WARN", "OCM CLI binary missing in PATH. Skipped GCP WIF template compatibility check.")
             return
 
         major_minor = ".".join(self.version.split(".")[:2])
@@ -344,7 +582,7 @@ class GAReadinessValidator:
             proc = subprocess.run(cmd, capture_output=True, text=True, check=False, timeout=15)
             if proc.returncode != 0:
                 err_msg = proc.stderr.strip() if proc.stderr else "No stderr output"
-                self.log_status("VAL_05", name, "WARN", f"Failed to query OCM wif-configs via 'ocm' CLI (exit code {proc.returncode}): {err_msg}")
+                self.log_status(name, "WARN", f"Failed to query OCM wif-configs via 'ocm' CLI (exit code {proc.returncode}): {err_msg}")
                 return
 
             stdout = proc.stdout or ""
@@ -371,15 +609,15 @@ class GAReadinessValidator:
 
             if supporting_configs:
                 configs_str = ", ".join(supporting_configs)
-                self.log_status("VAL_05", name, "PASS", f"GCP WIF template version '{target_wif_version}' is supported by active wif-config configurations: {configs_str}.")
+                self.log_status(name, "PASS", f"GCP WIF template version '{target_wif_version}' is supported by active wif-config configurations: {configs_str}.")
             else:
                 self.critical_failures += 1
-                self.log_status("VAL_05", name, "FAIL", f"GCP WIF template version '{target_wif_version}' is not supported by any active GCP wif-config configurations.")
+                self.log_status(name, "FAIL", f"GCP WIF template version '{target_wif_version}' is not supported by any active GCP wif-config configurations.")
         except subprocess.TimeoutExpired:
-            self.log_status("VAL_05", name, "WARN", "Query to OCM wif-configs timed out (network issue or interactive login prompt). Skipped check.")
+            self.log_status(name, "WARN", "Query to OCM wif-configs timed out (network issue or interactive login prompt). Skipped check.")
         except Exception as e:
             self.critical_failures += 1
-            self.log_status("VAL_05", name, "FAIL", f"Failed checking GCP WIF template compatibility: {e}")
+            self.log_status(name, "FAIL", f"Failed checking GCP WIF template compatibility: {e}")
 
     # ==================== RUN & REPORT ====================
 
@@ -388,26 +626,34 @@ class GAReadinessValidator:
         log_info("=========================================")
 
         all_checks = {
-            "VAL_02": self.check_channel_availability,
-            "VAL_03": self.check_rosa_cli_compatibility,
-            "VAL_04": self.check_documentation_status,
-            "VAL_05": self.check_gcp_wif_compatibility,
+            "Channel Availability": self.check_channel_availability,
+            "ROSA CLI Compatibility": self.check_rosa_cli_compatibility,
+            "AWS Marketplace Enablement": self.check_aws_marketplace_enablement,
+            "GCP Marketplace Enablement": self.check_gcp_marketplace_enablement,
+            "Version Gates": self.check_version_gates,
+            "Upgrade Paths": self.check_upgrade_paths,
+            "CI Job Status": self.check_ci_job_status,
+            "SOP & Runbooks Update Status": self.check_documentation_status,
+            "GCP WIF Template Compatibility": self.check_gcp_wif_compatibility,
         }
 
-        for cid, check_fn in all_checks.items():
-            log_info(f"Executing {cid}: {check_fn.__doc__.strip().splitlines()[0]}...")
+        for name, check_fn in all_checks.items():
+            log_info(f"Executing: {check_fn.__doc__.strip().splitlines()[0]}...")
             check_fn()
 
         validation_result = "PASS" if self.critical_failures == 0 else "FAIL"
         
+        now = datetime.datetime.now(datetime.timezone.utc)
         report_data = {
             "type": "GA Readiness Validation",
+            "baseline": self.baseline,
             "target": self.version,
             "env": os.environ.get("OCM_ENV", os.environ.get("OCM_ENVIRONMENT", "local CLI")),
-            "timestamp": datetime.datetime.now().isoformat(),
+            "timestamp": now.strftime("%Y-%m-%d %H:%M:%S UTC"),
             "validation_result": validation_result,
             "metrics": {
                 "total": len(all_checks),
+                "passed": len(all_checks) - self.failures - self.warnings,
                 "warnings": self.warnings,
                 "failures": self.failures,
                 "critical_failures": self.critical_failures
@@ -422,28 +668,10 @@ class GAReadinessValidator:
         generate_json_report(report_data, json_file)
         log_info(f"JSON report generated: {json_file}")
 
-        # Generate status check JSON file (Check #7 in orchestrator)
-        generate_status_report(
-            check_number=7,
-            check_name="GA Readiness Validation",
-            status=validation_result,
-            details={
-                "message": "All validation checks passed" if validation_result == "PASS" else "Validation checks failed",
-                "total_checks": len(all_checks),
-                "failures": self.failures,
-                "warnings": self.warnings,
-                "critical_failures": self.critical_failures
-            },
-            report_dir=self.report_dir
-        )
-
-        # Skip HTML reports if GAP_FULL_REPORT is set (full report will include these)
-        if os.environ.get('GAP_FULL_REPORT'):
-            log_info("Skipping HTML report (full report will be generated)")
-        else:
-            html_file = os.path.join(self.report_dir, f"gap-analysis-ga-validation_GA_readiness_{self.version}_{timestamp_str}.html")
-            generate_html_report(report_data, html_file)
-            log_info(f"HTML report generated: {html_file}")
+        # Generate HTML report
+        html_file = os.path.join(self.report_dir, f"gap-analysis-ga-validation_GA_readiness_{self.version}_{timestamp_str}.html")
+        generate_html_report(report_data, html_file)
+        log_info(f"HTML report generated: {html_file}")
 
         return validation_result
 
@@ -470,10 +698,15 @@ def main():
 
     if openshift_version:
         log_info(f"Using single version: {openshift_version}")
-        baseline, target = resolve_openshift_version(openshift_version)
-        if not baseline or not target:
-            log_error(f"Failed to resolve versions from: {openshift_version}")
-            sys.exit(1)
+        parts = openshift_version.split('.')
+        if len(parts) >= 3 or '-' in openshift_version:
+            target = openshift_version
+            baseline = None
+        else:
+            baseline, target = resolve_openshift_version(openshift_version)
+            if not baseline or not target:
+                log_error(f"Failed to resolve versions from: {openshift_version}")
+                sys.exit(1)
     elif args.baseline and args.target:
         baseline = args.baseline
         target = args.target
@@ -496,7 +729,8 @@ def main():
     # Validate the target version for GA readiness
     validator = GAReadinessValidator(
         version=target,
-        report_dir=args.report_dir
+        report_dir=args.report_dir,
+        baseline=baseline
     )
 
     result = validator.execute()

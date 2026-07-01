@@ -113,8 +113,7 @@ def find_latest_reports(baseline, target, report_dir='reports'):
         'feature_gates': None,
         'ocp_gate_ack': None,
         'ocm_version_gate': None,
-        'versions_channels': None,
-        'ga_validation': None
+        'versions_channels': None
     }
 
     # Find AWS STS report
@@ -155,12 +154,6 @@ def find_latest_reports(baseline, target, report_dir='reports'):
     # Sort all found files and pick the latest
     if oga_files:
         reports['ocp_gate_ack'] = sorted(oga_files)[-1]  # Latest by filename (timestamp)
-
-    # Find GA Readiness validation report (uses target version)
-    ga_pattern = os.path.join(report_dir, f"gap-analysis-ga-validation_GA_readiness_{target}_*.json")
-    ga_files = sorted(glob.glob(ga_pattern))
-    if ga_files:
-        reports['ga_validation'] = ga_files[-1]  # Latest
 
     # Find OCM Version Gate report (uses minor versions)
     ovg_pattern = os.path.join(report_dir, f"gap-analysis-ocm-version-gate_{baseline_minor}_to_{target_minor}_*.json")
@@ -285,7 +278,7 @@ def main():
             report_data['feature_gates'] = json.load(f)
         log_info(f"Loaded Feature Gates report: {reports['feature_gates']}")
     else:
-        err_msg = get_status_msg(6, "Feature Gates script execution failed or check skipped")
+        err_msg = get_status_msg(8, "Feature Gates script execution failed or check skipped")
         report_data['feature_gates'] = {
             'validation_result': 'PASS', # feature gates is informational
             'is_z_stream': True,
@@ -319,30 +312,6 @@ def main():
             'analysis': {
                 'acknowledged_gates': [],
                 'unacknowledged_gates': []
-            }
-        }
-
-    # Load GA Validation data
-    if reports['ga_validation']:
-        with open(reports['ga_validation'], 'r') as f:
-            report_data['ga_validation'] = json.load(f)
-        log_info(f"Loaded GA Readiness report: {reports['ga_validation']}")
-    else:
-        err_msg = get_status_msg(7, "GA Readiness Validation script execution failed or check skipped")
-        report_data['ga_validation'] = {
-            'validation_result': 'FAIL',
-            'metrics': {
-                'total': 4,
-                'failures': 4,
-                'warnings': 0,
-                'critical_failures': 4
-            },
-            'results': {
-                'VAL_EXEC': {
-                    'name': 'Script Execution',
-                    'status': 'FAIL',
-                    'message': err_msg
-                }
             }
         }
 

@@ -304,7 +304,7 @@
 
         {% if ocm_version_gates %}
         <div class="alert {% if ocm_version_gates.status == 'PASS' %}success{% elif ocm_version_gates.status == 'WARN' %}warning{% else %}error{% endif %}">
-            <h3>{% if ocm_version_gates.status == 'PASS' %}✅{% elif ocm_version_gates.status == 'WARN' %}⚠️{% else %}❌{% endif %} OCM Version Gates (VAL_01)</h3>
+            <h3>{% if ocm_version_gates.status == 'PASS' %}✅{% elif ocm_version_gates.status == 'WARN' %}⚠️{% else %}❌{% endif %} OCM Version Gates</h3>
             <p><strong>Status:</strong> {{ ocm_version_gates.status }}</p>
             <p>{{ ocm_version_gates.message }}</p>
 
