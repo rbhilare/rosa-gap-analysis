@@ -460,12 +460,11 @@ Exit Codes:
     }
 
     generate_status_report(
-        check_number=4,
+        check_number=6,
         check_name="Feature Gates Gap",
         status="PASS",
         details=status_details,
         report_dir=args.report_dir,
-        add_timestamp=True
     )
 
     sys.exit(0)

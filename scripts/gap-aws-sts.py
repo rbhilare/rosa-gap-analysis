@@ -15,6 +15,7 @@ sys.path.insert(0, str(Path(__file__).parent / 'lib'))
 from common import log_info, log_success, log_error, log_warning, check_command, is_pre_ga_version
 from openshift_releases import resolve_openshift_version, extract_minor_version
 from reporters import generate_html_report, generate_json_report, generate_status_report
+import shutil
 from ack_validation import (
     fetch_yaml_from_url,
     calculate_expected_baseline,
@@ -22,6 +23,105 @@ from ack_validation import (
     validate_cloudcredential_yaml,
     validate_sts_resources
 )
+
+
+def check_aws_marketplace_enablement(target_version):
+    """Verify AWS marketplace enablement for ROSA Classic and ROSA HCP (VAL_05 AWS portion)."""
+    major_minor = ".".join(target_version.split(".")[:2])
+    channels = ["stable", "fast", "candidate"]
+    try:
+        minor_val = int(major_minor.split(".")[1])
+        if minor_val % 2 == 0:
+            channels.append("eus")
+    except Exception:
+        pass
+
+    rosa_path = shutil.which("rosa")
+    if not rosa_path:
+        log_warning("ROSA CLI binary missing in PATH. Skipped AWS Marketplace enablement check.")
+        return {
+            'status': 'WARN',
+            'message': 'ROSA CLI binary missing in PATH. Skipped AWS Marketplace enablement check.',
+            'channels': {}
+        }
+
+    # Perform detailed checks using 'rosa' CLI
+    log_info(f"Performing live AWS Marketplace verification using 'rosa' CLI across channels {channels}...")
+    cli_results = {}
+    for chan in channels:
+        cli_results[chan] = {
+            "rosa_classic": False,
+            "rosa_hcp": False,
+            "rosa_classic_output": "",
+            "rosa_hcp_output": ""
+        }
+
+    for chan in channels:
+        # 1. ROSA Classic
+        cmd_classic = ["rosa", "list", "versions", "--channel-group", chan]
+        proc_classic = subprocess.run(cmd_classic, capture_output=True, text=True, check=False)
+        if proc_classic.returncode != 0:
+            log_warning(f"Failed to query 'rosa list versions' for channel group '{chan}' (is 'rosa' CLI logged in?).")
+            return {
+                'status': 'WARN',
+                'message': f"Failed to query 'rosa list versions' (returncode={proc_classic.returncode}). Ensure 'rosa' CLI is logged in.",
+                'channels': {}
+            }
+
+        for line in proc_classic.stdout.splitlines():
+            parts = line.strip().split()
+            if parts and (parts[0] == target_version or parts[0].startswith(major_minor)):
+                cli_results[chan]["rosa_classic"] = True
+                cli_results[chan]["rosa_classic_output"] = parts[0]
+                break
+
+        # 2. ROSA HCP
+        cmd_hcp = ["rosa", "list", "versions", "--hosted-cp", "--channel-group", chan]
+        proc_hcp = subprocess.run(cmd_hcp, capture_output=True, text=True, check=False)
+        if proc_hcp.returncode == 0:
+            for line in proc_hcp.stdout.splitlines():
+                parts = line.strip().split()
+                if parts and (parts[0] == target_version or parts[0].startswith(major_minor)):
+                    cli_results[chan]["rosa_hcp"] = True
+                    cli_results[chan]["rosa_hcp_output"] = parts[0]
+                    break
+
+    all_passed = True
+    for chan in channels:
+        res = cli_results[chan]
+        if not (res["rosa_classic"] and res["rosa_hcp"]):
+            all_passed = False
+
+    if all_passed:
+        log_success(f"Successfully verified AWS Marketplace enablement via 'rosa' CLI across channels {channels}.")
+        return {
+            'status': 'PASS',
+            'message': f"Successfully verified AWS Marketplace enablement across channels: {', '.join(channels)}.",
+            'channels': cli_results
+        }
+    else:
+        # Check if partially enabled
+        partially_enabled = False
+        for chan in channels:
+            res = cli_results[chan]
+            if res["rosa_classic"] or res["rosa_hcp"]:
+                partially_enabled = True
+                break
+        
+        if partially_enabled:
+            log_warning("AWS Marketplace enablement is partially complete. Some channels are missing.")
+            return {
+                'status': 'WARN',
+                'message': "AWS Marketplace enablement is partially complete. Some channels are missing.",
+                'channels': cli_results
+            }
+        else:
+            log_error("AWS Marketplace enablement checks failed. No ROSA versions detected in any channel.")
+            return {
+                'status': 'FAIL',
+                'message': "AWS Marketplace enablement checks failed. No ROSA versions detected in any channel.",
+                'channels': cli_results
+            }
 
 
 def validate_sts_acknowledgment(baseline, target, comparison=None, baseline_cr_dir=None, target_cr_dir=None):
@@ -531,6 +631,10 @@ Exit Codes:
     mcc_sts_url = f"https://github.com/openshift/managed-cluster-config/tree/master/resources/sts/{target_minor}"
     mcc_ack_url = f"https://github.com/openshift/managed-cluster-config/tree/master/deploy/osd-cluster-acks/sts/{target_minor}"
 
+    # Check AWS Marketplace Enablement (VAL_05 AWS portion)
+    log_info("\nChecking AWS Marketplace Enablement...")
+    aws_marketplace_result = check_aws_marketplace_enablement(target)
+
     # For pre-GA versions, missing MCC scaffolding is expected
     pre_ga_override = False
     if not validation_details['valid'] and is_pre_ga_version(target):
@@ -538,7 +642,7 @@ Exit Codes:
         log_warning(f"MCC scaffolding not yet created for pre-GA version {target}, skipping validation")
         validation_details['valid'] = True
 
-    if validation_details['valid']:
+    if validation_details['valid'] and aws_marketplace_result['status'] != 'FAIL':
         validation_result = 'PASS'
         log_success("=" * 60)
         if pre_ga_override:
@@ -557,6 +661,14 @@ Exit Codes:
             log_success(f"  Location: {mcc_ack_url}")
             log_success(f"  ✓ config.yaml: baseline version {check_2['actual_baseline']} matches expected")
             log_success(f"  ✓ CloudCredential: upgrade version validated")
+        
+        # Log AWS Marketplace success / warn
+        if aws_marketplace_result['status'] == 'PASS':
+            log_success(f"\nAWS Marketplace Enablement [PASS]")
+            log_success(f"  ✓ {aws_marketplace_result['message']}")
+        elif aws_marketplace_result['status'] == 'WARN':
+            log_warning(f"\nAWS Marketplace Enablement [WARN]")
+            log_warning(f"  ⚠ {aws_marketplace_result['message']}")
         log_success("")
 
         # Display warnings if any (these don't fail validation)
@@ -571,6 +683,10 @@ Exit Codes:
         log_error("=" * 60)
         log_error("✗ VALIDATION FAILED")
         log_error("=" * 60)
+
+        if aws_marketplace_result['status'] == 'FAIL':
+            log_error(f"\nAWS Marketplace Enablement [FAIL]")
+            log_error(f"  - {aws_marketplace_result['message']}")
 
         if check_1['status'] == 'FAIL':
             log_error(f"\nCHECK #1: Resources Validation [FAIL]")
@@ -596,6 +712,7 @@ Exit Codes:
         'validation_result': validation_result,
         'validation_checked': validation_checked,
         'validation_details': validation_details,
+        'aws_marketplace': aws_marketplace_result,
         'comparison': comparison,
         'summary': {
             'added': added_count,
@@ -648,7 +765,6 @@ Exit Codes:
         status=validation_result,
         details=status_details,
         report_dir=report_dir,
-        add_timestamp=True
     )
 
     # Exit based on validation result

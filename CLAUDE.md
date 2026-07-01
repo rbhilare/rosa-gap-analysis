@@ -111,6 +111,8 @@ export GH_TOKEN="..." && ./ci/prow-autofix.sh
 | **6** | gap-feature-gates.py | Feature gate changes (informational). **Z-stream behavior**: When comparing z-stream versions (e.g., 4.21.15 → 4.21.16), shows default feature gates instead of differences. | No |
 | **7** | gap-versions-channels.py | Version availability across Cincinnati channels (candidate/fast/stable), AWS/GCP marketplace availability (via OCM API), upgrade path existence, accepted-vs-channel comparison, cross-source consistency (informational). | No |
 | **8** | gap-ocm-version-gate.py | OCM version gate existence, configurations, and metadata for target OCP versions (compared against baseline version gates). Exits 0 on validation findings; fallback gracefully if OCM offline token / CLI is absent. | No |
+| **9** | gap-ga-validation.py | ROSA Production GA Readiness validation - checks version availability, marketplace readiness, and production deployment prerequisites. | Yes |
+
 
 
 **Expected baseline**: For target X.Y, baseline is X.(Y-1). Example: 4.22 expects 4.21 baseline.
