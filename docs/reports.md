@@ -31,7 +31,7 @@ gap-analysis-full_4.20_to_4.21_20260325_153500.json
 
 ## Individual Script Reports
 
-All reports follow the global 12-check validation system. See [Validation Checks](validation-checks.md) for details.
+All reports follow the global 13-check validation system. See [Validation Checks](validation-checks.md) for details.
 
 ### AWS STS Gap Analysis (Checks 1-2)
 
@@ -122,8 +122,6 @@ Generates:
 - Gate configurations for baseline and target versions
 - New, common, and removed gates comparison
 - Configuration metadata validation
-- Timestamp and version information
-
 - Timestamp and version information
 
 ### API Resources and CRD Gap Analysis (Check 9 - Informational)
@@ -234,7 +232,7 @@ Generates:
 - Total changes summary
 - Timestamp and version information
 
-## Combined Report (gap-all.sh) - All 12 Checks
+## Combined Report (gap-all.sh) - All 13 Checks
 
 When running the full gap analysis orchestrator:
 
@@ -242,12 +240,13 @@ When running the full gap analysis orchestrator:
 bash scripts/gap-all.sh --baseline 4.20 --target 4.21
 ```
 
-**Generates individual reports for each analysis PLUS a combined report:**
+**Generates individual JSON reports for each analysis PLUS a combined report** (individual HTML is skipped when `GAP_FULL_REPORT=1`, which `gap-all.sh` sets by default):
 
 - `gap-analysis-full_4.20_to_4.21_YYYYMMDD_HHMMSS.html`
 - `gap-analysis-full_4.20_to_4.21_YYYYMMDD_HHMMSS.json`
+- `status-check-<n>.json` — one per executed check (orchestrator summary)
 
-**Combined Report Contents (All 12 Checks):**
+**Combined Report Contents (All 13 Checks):**
 - **Check 1:** AWS STS Resources validation
 - **Check 2:** AWS STS Admin Ack validation
 - **Check 3:** GCP WIF Resources validation
@@ -260,6 +259,7 @@ bash scripts/gap-all.sh --baseline 4.20 --target 4.21
 - **Check 10:** Critical Alerts Diff Validation (informational)
 - **Check 11:** Cluster Install and Delete Validation (informational)
 - **Check 12:** Target E2E Validation and alert monitoring (informational)
+- **Check 13:** Upgrade Validation from Y-1 to Y with E2E Tests
 - Aggregate statistics
 - Timestamp and version information
 
@@ -273,7 +273,128 @@ bash scripts/gap-all.sh --baseline 4.20 --target 4.21
 7. Critical Alerts Diff Validation (Check 10)
 8. Cluster Install and Delete Validation (Check 11)
 9. Target E2E Validation and alert monitoring (Check 12)
-10. Feature Gates (Check 8) - Always executed last
+10. Upgrade Validation from Y-1 to Y with E2E Tests (Check 13)
+11. Feature Gates (Check 8) - Always executed last
+
+## Report Verification
+
+How reports, exit codes, and orchestrator status files relate to each other ([ROSAENG-60362](https://redhat.atlassian.net/browse/ROSAENG-60362)).
+
+### Reporting layers
+
+Each gap script produces up to four outputs:
+
+| Layer | Location | Consumer |
+|-------|----------|----------|
+| Console | stderr via `log_*` helpers | Humans, Prow build log |
+| JSON report | `reports/gap-analysis-<type>_*.json` | Combined report, CI parsers |
+| HTML report | `reports/gap-analysis-<type>_*.html` (standalone mode) | Reviewers |
+| Status file | `reports/status-check-<n>.json` | `gap-all.sh`, combined report fallbacks |
+
+`gap-all.sh` sets `GAP_FULL_REPORT=1` by default so individual HTML is skipped; the combined report renders all sections. Run a script directly (without `gap-all.sh`) or unset `GAP_FULL_REPORT` to get standalone HTML.
+
+### Exit code contract
+
+| Script outcome | Process exit | `status-check` status | Job impact |
+|----------------|-------------|------------------------|------------|
+| Validation PASS | 0 | PASS | None |
+| Validation FAIL (standard check) | 1 | FAIL | `gap-all.sh` exits 1 |
+| Validation FAIL (informational check) | 0 | WARNING | Report shows FAIL; job continues |
+| Missing data (SKIP) | 0 | SKIP | Informational only |
+| Script crash / unhandled exception | 1 | FAIL (synthetic if missing) | `gap-all.sh` exits 1 |
+
+**Standard checks** (can fail the job): #1–#7, #13  
+**Informational checks** (report only): #8–#12
+
+### Status file schema
+
+Written by `scripts/lib/reporters.py`:
+
+```json
+{
+  "check_number": 7,
+  "check_name": "OCM Version Gates",
+  "status": "FAIL",
+  "exit_code": 1,
+  "details": {
+    "message": "1 validation failure(s): Deprecated gate in target: ...",
+    "errors": ["Deprecated gate in target: ..."],
+    "gates_count": 1
+  }
+}
+```
+
+- `message` — short summary for `gap-all.sh` console output
+- `errors` — full validation errors (up to 20, with `errors_truncated` if more)
+- Check-specific counters (`differences_count`, `gates_count`, etc.)
+
+### Check → status file mapping
+
+| Checks | Script | Status file |
+|--------|--------|-------------|
+| 1–2 | `gap-aws-sts.py` | `status-check-1.json` |
+| 3–4 | `gap-gcp-wif.py` | `status-check-2.json` |
+| 5 | `gap-ocp-gate-ack.py` | `status-check-3.json` |
+| 6 | `gap-versions-channels.py` | `status-check-6.json` |
+| 7 | `gap-ocm-version-gate.py` | `status-check-7.json` |
+| 8 | `gap-feature-gates.py` | `status-check-8.json` |
+| 9–13 | `gap-api-resources.py`, etc. | `status-check-<n>.json` |
+
+### Combined report fallbacks
+
+`scripts/generate-combined-report.py` loads individual JSON reports. When a report file is missing (script crash), it builds a fallback section from `status-check-*.json` so failures are not silent in the combined HTML/JSON dashboard.
+
+### Verification workflow
+
+**Automated tests:**
+
+```bash
+make setup
+make test
+```
+
+Covers status file schema, error collection helpers, and combined-report fallback logic.
+
+**Manual pass-path check (single script):**
+
+```bash
+python3 scripts/gap-aws-sts.py --baseline 4.21.14 --target 4.21.15 --report-dir /tmp/gap-test
+echo $?   # expect 0
+jq . /tmp/gap-test/status-check-1.json
+```
+
+**Manual fail-path check (orchestrator):**
+
+```bash
+./scripts/gap-all.sh --baseline 4.21 --target 4.22 --steps aws
+# If validation fails:
+echo $?                            # expect 1
+jq . reports/status-check-1.json   # status FAIL, errors populated
+ls reports/gap-analysis-full_*.html
+```
+
+**Intentional failure scenarios:**
+
+| Check | How to induce failure |
+|-------|----------------------|
+| AWS STS | Compare versions with known MCC drift (e.g. new CR in target) |
+| GCP WIF | 4.x cross-minor with WIF permission drift |
+| OCP gates | Target with unacknowledged admin gates |
+| Versions/channels | GA target not in any channel |
+| OCM version gate | Deprecated gates in live OCM data |
+| Upgrade E2E | Failed post-upgrade JUnit in Prow artifacts |
+
+Prefer fixture-based unit tests (`tests/`) over editing `managed-cluster-config` for CI.
+
+### No silent failures checklist
+
+- [ ] Script exit code matches validation result (standard checks)
+- [ ] `status-check-*.json` exists after every script run
+- [ ] JSON report contains `validation_details` / `errors` on FAIL
+- [ ] HTML highlights FAIL sections (red styling, error lists)
+- [ ] `gap-all.sh` summary lists failed check name and message
+- [ ] Combined report includes failure details from all failed scripts
+- [ ] Crash without JSON still produces synthetic FAIL via status file
 
 ## Viewing Reports
 

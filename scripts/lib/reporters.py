@@ -4,7 +4,7 @@
 import json
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, Any
+from typing import Any, Dict, Iterable, List, Optional
 
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 from prow_artifacts import topology_display_name
@@ -20,6 +20,51 @@ jinja_env = Environment(
     lstrip_blocks=True
 )
 jinja_env.filters['topology_label'] = topology_display_name
+
+MAX_STATUS_ERRORS = 20
+
+
+def collect_errors(*error_lists: Optional[Iterable[Any]]) -> List[str]:
+    """Merge error lists into a de-duplicated string list."""
+    errors: List[str] = []
+    for error_list in error_lists:
+        if not error_list:
+            continue
+        for item in error_list:
+            if item is None:
+                continue
+            text = str(item).strip()
+            if text and text not in errors:
+                errors.append(text)
+    return errors
+
+
+def format_failure_message(summary: str, errors: Optional[List[str]] = None,
+                           max_preview: int = 3) -> str:
+    """Build a concise status message with optional error preview."""
+    if not errors:
+        return summary
+    preview = "; ".join(errors[:max_preview])
+    if len(errors) > max_preview:
+        preview += f"; ... and {len(errors) - max_preview} more"
+    return f"{summary}: {preview}"
+
+
+def build_status_details(message: str, errors: Optional[List[str]] = None,
+                         **extra: Any) -> Dict[str, Any]:
+    """Build orchestrator status details with optional structured errors."""
+    details = dict(extra)
+    details['message'] = message
+    if errors:
+        details['errors'] = errors[:MAX_STATUS_ERRORS]
+        if len(errors) > MAX_STATUS_ERRORS:
+            details['errors_truncated'] = len(errors) - MAX_STATUS_ERRORS
+    return details
+
+
+def status_exit_code(status: str) -> int:
+    """Map report status to process exit code for gap-all.sh."""
+    return 0 if status in ('PASS', 'WARNING', 'WARN', 'SKIP') else 1
 
 
 def generate_json_report(data: Dict[str, Any], output_file: str = None) -> str:
@@ -39,17 +84,17 @@ def generate_status_report(check_number: int, check_name: str, status: str,
     Generate a structured status file for gap-all.sh to consume.
 
     Args:
-        check_number: Numeric check identifier (1-12)
+        check_number: Numeric check identifier (1-13)
         check_name: Human-readable check name
-        status: PASS, FAIL, WARNING, ERROR, SKIP
-        details: Dictionary containing check-specific details
+        status: PASS, FAIL, WARNING, WARN, ERROR, SKIP
+        details: Dictionary containing check-specific details (message, errors, ...)
         report_dir: Directory to write status file
     """
     status_data = {
         "check_number": check_number,
         "check_name": check_name,
         "status": status,
-        "exit_code": 0 if status in ["PASS", "WARNING", "SKIP"] else 1,
+        "exit_code": status_exit_code(status),
         "details": details
     }
 

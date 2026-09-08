@@ -33,7 +33,9 @@ def _get_rosa_versions(channel, major_minor, hosted_cp=False):
     cmd = ["rosa", "list", "versions", "--channel-group", channel]
     if hosted_cp:
         cmd.append("--hosted-cp")
-    proc = subprocess.run(cmd, capture_output=True, text=True, check=False)
+    proc = subprocess.run(
+        cmd, capture_output=True, text=True, encoding='utf-8', errors='replace', check=False
+    )
     if proc.returncode != 0:
         return None
     versions = set()
@@ -169,7 +171,9 @@ def check_gcp_marketplace_enablement(target_version):
         cincinnati_versions = _get_cincinnati_versions(f"{chan}-{major_minor}")
 
         cmd_gcp = ["ocm", "list", "versions", "--channel-group", chan, "--marketplace-gcp=true"]
-        proc_gcp = subprocess.run(cmd_gcp, capture_output=True, text=True, check=False)
+        proc_gcp = subprocess.run(
+            cmd_gcp, capture_output=True, text=True, encoding='utf-8', errors='replace', check=False
+        )
         if proc_gcp.returncode != 0:
             log_warning(f"Failed to query 'ocm' CLI versions for channel group '{chan}'.")
             return {

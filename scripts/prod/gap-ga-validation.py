@@ -127,7 +127,10 @@ class GAReadinessValidator:
         name = "ROSA CLI Compatibility"
         try:
             # Check if rosa is installed
-            version_check = subprocess.run(["rosa", "version"], capture_output=True, text=True, check=False, timeout=15)
+            version_check = subprocess.run(
+                ["rosa", "version"], capture_output=True, text=True,
+                encoding='utf-8', errors='replace', check=False, timeout=15
+            )
             if version_check.returncode != 0:
                 err_msg = version_check.stderr.strip() if version_check.stderr else "No stderr output"
                 self.critical_failures += 1
@@ -141,7 +144,11 @@ class GAReadinessValidator:
             missing_channels = []
 
             for channel in channels:
-                list_versions = subprocess.run(["rosa", "list", "versions", "--channel-group", channel], capture_output=True, text=True, check=False, timeout=15)
+                list_versions = subprocess.run(
+                    ["rosa", "list", "versions", "--channel-group", channel],
+                    capture_output=True, text=True, encoding='utf-8', errors='replace',
+                    check=False, timeout=15
+                )
                 if list_versions.returncode != 0:
                     err_msg = list_versions.stderr.strip() if list_versions.stderr else "No stderr output"
                     self.log_status(name, "WARN", f"ROSA CLI ({cli_version}) failed to query channel '{channel}' (auth or network error, exit code {list_versions.returncode}): {err_msg}")
@@ -536,7 +543,10 @@ class GAReadinessValidator:
 
         try:
             cmd = ["ocm", "gcp", "list", "wif-config"]
-            proc = subprocess.run(cmd, capture_output=True, text=True, check=False, timeout=15)
+            proc = subprocess.run(
+                cmd, capture_output=True, text=True, encoding='utf-8', errors='replace',
+                check=False, timeout=15
+            )
             if proc.returncode != 0:
                 err_msg = proc.stderr.strip() if proc.stderr else "No stderr output"
                 self.log_status(name, "WARN", f"Failed to query OCM wif-configs via 'ocm' CLI (exit code {proc.returncode}): {err_msg}")

@@ -137,6 +137,39 @@ def parse_build_log(log_path):
     return metrics
 
 
+def load_status_check_file(report_dir, check_num):
+    """Load orchestrator status-check JSON for a check number."""
+    status_file = os.path.join(report_dir, f"status-check-{check_num}.json")
+    if os.path.exists(status_file):
+        try:
+            with open(status_file, 'r') as f:
+                return json.load(f)
+        except Exception:
+            pass
+    return None
+
+
+def get_status_message(report_dir, check_num, default_msg):
+    """Return details.message from a status-check file, or default."""
+    status_data = load_status_check_file(report_dir, check_num)
+    if status_data:
+        return status_data.get('details', {}).get('message', default_msg)
+    return default_msg
+
+
+def fallback_validation_result(report_dir, check_num, default='SKIP'):
+    """Preserve FAIL from a crashed check; SKIP only when the check did not run."""
+    status_data = load_status_check_file(report_dir, check_num)
+    if not status_data:
+        return default
+    status = status_data.get('status') or default
+    if status in ('FAIL', 'ERROR'):
+        return 'FAIL'
+    if status in ('PASS', 'SKIP', 'WARNING', 'WARN'):
+        return status if status != 'WARN' else 'WARNING'
+    return default
+
+
 def find_latest_reports(baseline, target, report_dir='reports'):
     """Find the latest JSON reports for each analysis type."""
     reports = {
@@ -289,32 +322,13 @@ def main():
 
     # Helper to load status check data for fallback messages
     def load_status_check(check_num):
-        status_file = os.path.join(args.report_dir, f"status-check-{check_num}.json")
-        if os.path.exists(status_file):
-            try:
-                with open(status_file, 'r') as f:
-                    return json.load(f)
-            except Exception:
-                pass
-        return None
+        return load_status_check_file(args.report_dir, check_num)
 
     def get_status_msg(check_num, default_msg):
-        status_data = load_status_check(check_num)
-        if status_data:
-            return status_data.get('details', {}).get('message', default_msg)
-        return default_msg
+        return get_status_message(args.report_dir, check_num, default_msg)
 
-    def fallback_validation_result(check_num, default='SKIP'):
-        """Preserve FAIL from a crashed check; SKIP only when the check did not run."""
-        status_data = load_status_check(check_num)
-        if not status_data:
-            return default
-        status = status_data.get('status') or default
-        if status in ('FAIL', 'ERROR'):
-            return 'FAIL'
-        if status in ('PASS', 'SKIP', 'WARNING'):
-            return status
-        return default
+    def fallback_validation_result_local(check_num, default='SKIP'):
+        return fallback_validation_result(args.report_dir, check_num, default)
 
     # Load AWS STS data
     if reports['aws_sts']:
@@ -323,6 +337,8 @@ def main():
         log_info(f"Loaded AWS STS report: {reports['aws_sts']}")
     else:
         err_msg = get_status_msg(1, "AWS STS script execution failed or check skipped")
+        status_data = load_status_check(1) or {}
+        status_errors = status_data.get('details', {}).get('errors', [])
         report_data['aws_sts'] = {
             'validation_result': 'FAIL',
             'comparison': {
@@ -330,9 +346,10 @@ def main():
                 'file_changes': []
             },
             'validation_details': {
-                'check_1_resources': {'status': 'FAIL', 'errors': [err_msg], 'file_count': 0},
+                'check_1_resources': {'status': 'FAIL', 'errors': status_errors or [err_msg], 'file_count': 0},
                 'check_2_admin_ack': {'status': 'FAIL', 'errors': [], 'expected_baseline': ''}
-            }
+            },
+            'error_message': err_msg,
         }
 
     # Load GCP WIF data
@@ -342,6 +359,8 @@ def main():
         log_info(f"Loaded GCP WIF report: {reports['gcp_wif']}")
     else:
         err_msg = get_status_msg(2, "GCP WIF script execution failed or check skipped")
+        status_data = load_status_check(2) or {}
+        status_errors = status_data.get('details', {}).get('errors', [])
         report_data['gcp_wif'] = {
             'validation_result': 'FAIL',
             'comparison': {
@@ -349,9 +368,10 @@ def main():
                 'file_changes': []
             },
             'validation_details': {
-                'check_1_resources': {'status': 'FAIL', 'errors': [err_msg], 'file_count': 0},
+                'check_1_resources': {'status': 'FAIL', 'errors': status_errors or [err_msg], 'file_count': 0},
                 'check_2_admin_ack': {'status': 'FAIL', 'errors': [], 'expected_baseline': ''}
-            }
+            },
+            'error_message': err_msg,
         }
 
     # Load Feature Gates data
@@ -402,12 +422,84 @@ def main():
         with open(reports['ocm_version_gate'], 'r') as f:
             report_data['ocm_version_gate'] = json.load(f)
         log_info(f"Loaded OCM Version Gate report: {reports['ocm_version_gate']}")
+    else:
+        err_msg = get_status_msg(7, "OCM Version Gate script execution failed or check skipped")
+        status_data = load_status_check(7) or {}
+        status_errors = status_data.get('details', {}).get('errors', [])
+        report_data['ocm_version_gate'] = {
+            'validation_result': fallback_validation_result_local(7, 'FAIL'),
+            'baseline_minor': extract_minor_version(args.baseline),
+            'target_minor': extract_minor_version(args.target),
+            'gates_count': {'baseline': 0, 'target': 0},
+            'comparison': {
+                'common_gates_count': 0,
+                'new_gates_count': 0,
+                'deprecated_gates_count': 0,
+                'common_gates': [],
+                'new_gates': [],
+                'deprecated_gates': [],
+            },
+            'configuration_validation': {
+                'valid': False,
+                'errors': status_errors or [err_msg],
+            },
+            'error_message': err_msg,
+        }
 
     # Load Versions & Channels data
     if reports['versions_channels']:
         with open(reports['versions_channels'], 'r') as f:
             report_data['versions_channels'] = json.load(f)
         log_info(f"Loaded Versions & Channels report: {reports['versions_channels']}")
+    else:
+        err_msg = get_status_msg(6, "Versions & Channels script execution failed or check skipped")
+        status_data = load_status_check(6) or {}
+        status_errors = status_data.get('details', {}).get('errors', [])
+        baseline_minor = extract_minor_version(args.baseline)
+        target_minor = extract_minor_version(args.target)
+        report_data['versions_channels'] = {
+            'validation_result': fallback_validation_result_local(6, 'FAIL'),
+            'baseline': args.baseline,
+            'target': args.target,
+            'baseline_minor': baseline_minor,
+            'target_minor': target_minor,
+            'summary': {
+                'baseline_channels': [],
+                'target_channels': [],
+                'target_highest_channel': status_data.get('details', {}).get('target_highest_channel'),
+                'target_is_ga': status_data.get('details', {}).get('target_is_ga', False),
+                'marketplace_available': status_data.get('details', {}).get('marketplace_available', False),
+                'target_rosa_classic': None,
+                'target_rosa_hcp': None,
+                'target_osd_gcp': None,
+                'gcp_skipped': status_data.get('details', {}).get('gcp_skipped', False),
+            },
+            'channel_availability': {
+                'baseline_in_stable': status_data.get('details', {}).get('baseline_in_stable', False),
+                'baseline_version_channels': [],
+                'target_version_channels': [],
+                'target_highest_channel': status_data.get('details', {}).get('target_highest_channel'),
+                'baseline': {
+                    'minor': baseline_minor,
+                    'version': args.baseline,
+                    'channels': {},
+                },
+                'target': {
+                    'minor': target_minor,
+                    'version': args.target,
+                    'channels': {},
+                },
+            },
+            'marketplace': {
+                'available': status_data.get('details', {}).get('marketplace_available', False),
+                'hcp': {
+                    'baseline': {'hcp_enabled': False, 'channels': []},
+                    'target': {'hcp_enabled': False, 'channels': []},
+                },
+            },
+            'error_message': err_msg,
+            'validation_errors': status_errors or [err_msg],
+        }
 
     # Load API Resources and CRD data
     if reports['api_resources']:
@@ -417,7 +509,7 @@ def main():
     else:
         err_msg = get_status_msg(9, "API Resources and CRD Diff Validation skipped or no snapshots found")
         report_data['api_resources'] = {
-            'validation_result': fallback_validation_result(9),
+            'validation_result': fallback_validation_result_local(9),
             'summary': {
                 'new_api_resources': 0,
                 'removed_api_resources': 0,
@@ -447,7 +539,7 @@ def main():
     else:
         err_msg = get_status_msg(10, "Critical Alerts Diff Validation skipped or no snapshots found")
         report_data['critical_alerts'] = {
-            'validation_result': fallback_validation_result(10),
+            'validation_result': fallback_validation_result_local(10),
             'summary': {
                 'new_critical': 0,
                 'new_other': 0,
@@ -474,7 +566,7 @@ def main():
     else:
         err_msg = get_status_msg(11, "Cluster Install and Delete Validation skipped or no snapshots found")
         report_data['cluster_install'] = {
-            'validation_result': fallback_validation_result(11),
+            'validation_result': fallback_validation_result_local(11),
             'summary': {
                 'new_operators': 0,
                 'removed_operators': 0,
@@ -501,7 +593,7 @@ def main():
     else:
         err_msg = get_status_msg(12, "Target E2E Validation skipped or no JUnit found")
         report_data['e2e_validation'] = {
-            'validation_result': fallback_validation_result(12),
+            'validation_result': fallback_validation_result_local(12),
             'summary': {
                 'tests': 0,
                 'failures': 0,
@@ -529,7 +621,7 @@ def main():
     else:
         err_msg = get_status_msg(13, "Upgrade Validation skipped or no Y-1 upgrade JUnit found")
         report_data['upgrade_e2e'] = {
-            'validation_result': fallback_validation_result(13),
+            'validation_result': fallback_validation_result_local(13),
             'summary': {
                 'tests': 0,
                 'failures': 0,

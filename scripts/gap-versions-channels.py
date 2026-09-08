@@ -16,6 +16,7 @@ sys.path.insert(0, str(Path(__file__).parent / 'lib'))
 from common import log_info, log_success, log_error, log_warning, is_version_5x
 from openshift_releases import resolve_gap_versions, extract_minor_version, fetch_sippy_ga_dates, is_ga_minor_version
 from reporters import generate_html_report, generate_json_report, generate_status_report
+from reporters import build_status_details, format_failure_message
 
 
 GA_CHANNELS = ['stable', 'eus', 'fast', 'candidate']
@@ -34,7 +35,7 @@ def _fetch_channel_via_ocm(minor_version, channel_group):
              '--parameter', f'search={search}',
              '--parameter', 'size=200',
              '--parameter', 'order=raw_id asc'],
-            capture_output=True, text=True, timeout=30
+            capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=30
         )
         if result.returncode != 0:
             err_msg = result.stderr.strip() if result.stderr else f"exit code {result.returncode}"
@@ -61,7 +62,7 @@ def _fetch_channel_via_rosa(minor_version, channel_group):
     try:
         result = subprocess.run(
             ['rosa', 'list', 'versions', '--channel-group', channel_group],
-            capture_output=True, text=True, timeout=30
+            capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=30
         )
         if result.returncode != 0:
             err_msg = result.stderr.strip() if result.stderr else f"exit code {result.returncode}"
@@ -173,7 +174,7 @@ def is_ocm_authenticated():
     try:
         result = subprocess.run(
             ['ocm', 'whoami'],
-            capture_output=True, text=True, timeout=10
+            capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=10
         )
         return result.returncode == 0
     except (FileNotFoundError, subprocess.TimeoutExpired):
@@ -195,7 +196,7 @@ def fetch_ocm_versions(minor_version, channel_group='stable'):
              '--parameter', f'search={search}',
              '--parameter', 'size=100',
              '--parameter', 'order=raw_id desc'],
-            capture_output=True, text=True, timeout=30
+            capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=30
         )
         if result.returncode != 0:
             return []
@@ -211,7 +212,7 @@ def fetch_rosa_hcp_versions(minor_version, channel_group='candidate'):
     try:
         result = subprocess.run(
             ['rosa', 'list', 'versions', '--hosted-cp', '--channel-group', channel_group],
-            capture_output=True, text=True, timeout=30
+            capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=30
         )
         if result.returncode != 0:
             return [], f"rosa HCP versions query for {channel_group}-{minor_version}: exit code {result.returncode}"
@@ -548,11 +549,16 @@ Exit Codes:
 
     # Determine validation result based on channel availability and marketplace
     validation_result = 'PASS'
+    validation_errors = []
     target_in_channel = len(channel_analysis['target_version_channels']) > 0
 
     if not target_in_channel and target_is_ga:
         validation_result = 'FAIL'
-        log_error(f"Target {target_full} not found in any {target_minor} channel (next version after GA — must be available)")
+        validation_errors.append(
+            f"Target {target_full} not found in any {target_minor} channel "
+            "(next version after GA — must be available)"
+        )
+        log_error(validation_errors[-1])
     elif not target_in_channel:
         log_warning(f"Target {target_full} not found in any {target_minor} channel (dev version — informational only)")
 
@@ -563,7 +569,8 @@ Exit Codes:
     if target_is_ga:
         if not marketplace_analysis['hcp']['target']['hcp_enabled']:
             validation_result = 'FAIL'
-            log_error(f"Target {target_minor} not available for ROSA HCP (mandatory for GA)")
+            validation_errors.append(f"Target {target_minor} not available for ROSA HCP (mandatory for GA)")
+            log_error(validation_errors[-1])
 
         if marketplace_analysis.get('available'):
             aws_enabled = marketplace_analysis['aws']['target']['rosa_enabled']
@@ -572,13 +579,19 @@ Exit Codes:
                     log_warning(f"Target {target_full} not enabled for ROSA Classic")
                 else:
                     validation_result = 'FAIL'
-                    log_error(f"Target {target_full} not enabled for ROSA Classic (mandatory for GA 4.x)")
+                    validation_errors.append(
+                        f"Target {target_full} not enabled for ROSA Classic (mandatory for GA 4.x)"
+                    )
+                    log_error(validation_errors[-1])
 
             if not skip_gcp_target:
                 gcp_enabled = marketplace_analysis['gcp']['target']['gcp_marketplace_enabled']
                 if not gcp_enabled:
                     validation_result = 'FAIL'
-                    log_error(f"Target {target_full} not enabled for OSD GCP (mandatory for GA 4.x)")
+                    validation_errors.append(
+                        f"Target {target_full} not enabled for OSD GCP (mandatory for GA 4.x)"
+                    )
+                    log_error(validation_errors[-1])
         else:
             log_warning("OCM not authenticated — cannot validate ROSA Classic and OSD GCP marketplace for GA version")
 
@@ -674,15 +687,24 @@ Exit Codes:
         log_fn(f"❌ FAILED - Target version not available in any channel")
 
     # Generate status file for gap-all.sh
-    status_details = {
-        "is_z_stream": is_z_stream,
-        "baseline_in_stable": channel_analysis['baseline_in_stable'],
-        "target_highest_channel": channel_analysis['target_highest_channel'],
-        "marketplace_available": marketplace_analysis.get('available', False),
-        "gcp_skipped": skip_gcp_target,
-        "target_is_ga": target_is_ga,
-        "message": f"target highest channel: {channel_analysis['target_highest_channel']}"
-    }
+    if validation_result == 'FAIL':
+        status_message = format_failure_message(
+            f"{len(validation_errors) or 1} validation failure(s)",
+            validation_errors,
+        )
+    else:
+        status_message = f"target highest channel: {channel_analysis['target_highest_channel']}"
+
+    status_details = build_status_details(
+        status_message,
+        validation_errors if validation_errors else None,
+        is_z_stream=is_z_stream,
+        baseline_in_stable=channel_analysis['baseline_in_stable'],
+        target_highest_channel=channel_analysis['target_highest_channel'],
+        marketplace_available=marketplace_analysis.get('available', False),
+        gcp_skipped=skip_gcp_target,
+        target_is_ga=target_is_ga,
+    )
 
     generate_status_report(
         check_number=6,
