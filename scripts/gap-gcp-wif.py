@@ -17,6 +17,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 from common import log_info, log_success, log_error, log_warning, check_command, is_pre_ga_version
 from openshift_releases import resolve_gap_versions, extract_minor_version
 from reporters import generate_html_report, generate_json_report, generate_status_report
+from reporters import build_status_details, collect_errors, format_failure_message
 import shutil
 from ack_validation import (
     fetch_yaml_from_url,
@@ -801,22 +802,30 @@ Exit Codes:
 
     # Generate status report for gap-all.sh
     if validation_result == 'FAIL':
-        failed_checks = validation_details.get('failed_checks', [])
-        status_message = f"{len(failed_checks)} validation failure(s)"
+        failure_errors = collect_errors(
+            validation_details.get('check_1_resources', {}).get('errors', []),
+            validation_details.get('check_2_admin_ack', {}).get('errors', []),
+        )
+        status_message = format_failure_message(
+            f"{len(failure_errors) or 1} validation failure(s)",
+            failure_errors,
+        )
     else:
         if total_changes == 0:
             status_message = "0 differences found"
         else:
             status_message = f"{total_changes} difference(s) found"
+        failure_errors = None
 
-    status_details = {
-        "differences_count": total_changes,
-        "added_count": added_count,
-        "removed_count": removed_count,
-        "validation_passed": validation_result == 'PASS',
-        "validation_checked": validation_checked,
-        "message": status_message
-    }
+    status_details = build_status_details(
+        status_message,
+        failure_errors,
+        differences_count=total_changes,
+        added_count=added_count,
+        removed_count=removed_count,
+        validation_passed=validation_result == 'PASS',
+        validation_checked=validation_checked,
+    )
 
     generate_status_report(
         check_number=2,

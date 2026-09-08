@@ -523,7 +523,14 @@ main() {
 
         if [[ -f "$status_file" ]]; then
             check_status[$step]=$(jq -r '.status' "$status_file" 2>/dev/null || echo "UNKNOWN")
-            check_message[$step]=$(jq -r '.details.message' "$status_file" 2>/dev/null || echo "status unavailable")
+            local message
+            message=$(jq -r '.details.message // "status unavailable"' "$status_file" 2>/dev/null || echo "status unavailable")
+            local first_error
+            first_error=$(jq -r '.details.errors[0] // empty' "$status_file" 2>/dev/null || true)
+            if [[ -n "$first_error" && "$message" != *"$first_error"* ]]; then
+                message="${message} (${first_error})"
+            fi
+            check_message[$step]="$message"
             if [[ -n "$count_field" ]]; then
                 check_diff_count[$step]=$(jq -r ".details.${count_field} // 0" "$status_file" 2>/dev/null || echo "0")
             else
@@ -688,15 +695,13 @@ EOF
             --report-dir "$REPORT_DIR" \
             $VERBOSE_FLAG 2>&1; then
             check_results["ocm-version-gate"]=0
-            check_status["ocm-version-gate"]="PASS"
-            check_message["ocm-version-gate"]="OCM version gate analysis passed"
         else
             local exit_code=$?
             check_results["ocm-version-gate"]=1
-            check_status["ocm-version-gate"]="FAIL"
-            check_message["ocm-version-gate"]="OCM version gate analysis failed with exit code $exit_code"
+            log_error "OCM Version Gate analysis script failed with exit code $exit_code"
         fi
-        check_diff_count["ocm-version-gate"]=0
+
+        read_check_status "ocm-version-gate"
     fi
 
     # Run API Resources and CRD analysis (Check #9 - informational; missing snapshots are SKIP)

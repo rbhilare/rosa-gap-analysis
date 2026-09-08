@@ -18,6 +18,7 @@ sys.path.insert(0, str(Path(__file__).parent / 'lib'))
 from common import log_info, log_success, log_error, log_warning
 from openshift_releases import resolve_gap_versions, extract_minor_version, get_next_minor_version
 from reporters import generate_html_report, generate_json_report, generate_status_report
+from reporters import build_status_details, collect_errors, format_failure_message
 from ack_validation import fetch_yaml_from_url, calculate_expected_baseline, validate_config_yaml
 
 try:
@@ -642,14 +643,23 @@ Exit Codes:
             log_error(f"❌ FAILED - Target version validation failed")
 
             # Generate status report for gap-all.sh
-            status_message = f"{unacked_count} gate(s) not acknowledged" if unacked_count > 0 else "validation failed"
-            status_details = {
-                "gates_count": gates_count,
-                "acked_count": acked_count,
-                "unacked_count": unacked_count,
-                "validation_passed": False,
-                "message": status_message
-            }
+            failure_errors = collect_errors(
+                structure_validation.get('errors', []),
+                [f"{unacked_count} gate(s) not acknowledged"] if unacked_count > 0 else None,
+                ["admin-ack.yaml required but not found"] if analysis.get('ack_file_missing') else None,
+            )
+            status_message = format_failure_message(
+                f"{unacked_count} gate(s) not acknowledged" if unacked_count > 0 else "validation failed",
+                failure_errors,
+            )
+            status_details = build_status_details(
+                status_message,
+                failure_errors,
+                gates_count=gates_count,
+                acked_count=acked_count,
+                unacked_count=unacked_count,
+                validation_passed=False,
+            )
             generate_status_report(
                 check_number=3,
                 check_name="OCP Admin Gate Acknowledgments",

@@ -16,7 +16,31 @@ sys.path.insert(0, str(Path(__file__).parent / 'lib'))
 
 from common import log_info, log_success, log_error, log_warning
 from openshift_releases import resolve_gap_versions, extract_minor_version
-from reporters import generate_html_report, generate_json_report
+from reporters import (
+    build_status_details,
+    collect_errors,
+    format_failure_message,
+    generate_html_report,
+    generate_json_report,
+    generate_status_report,
+)
+
+
+def collect_ocm_validation_errors(analysis_results, validation_status):
+    """Collect human-readable validation errors for status reporting."""
+    if validation_status != 'FAIL':
+        return []
+
+    errors = []
+    for gate in analysis_results.get('deprecated_gates', []):
+        label = gate.get('label', gate) if isinstance(gate, dict) else gate
+        errors.append(f"Deprecated gate in target: {label}")
+
+    if analysis_results.get('baseline_has_gate') and not analysis_results.get('target_has_gate'):
+        errors.append("Baseline gate labels missing from target")
+
+    errors.extend(collect_errors(analysis_results.get('metadata_errors', [])))
+    return errors
 
 
 def get_mock_gates(baseline_minor, target_minor):
@@ -379,6 +403,40 @@ def main():
         )
         generate_html_report(report_data, html_file)
         log_info(f"HTML report generated: {html_file}")
+
+    validation_errors = collect_ocm_validation_errors(analysis_results, validation_status)
+    gates_count = (
+        len(analysis_results.get('deprecated_gates', []))
+        + (1 if analysis_results.get('baseline_has_gate') and not analysis_results.get('target_has_gate') else 0)
+        + len(analysis_results.get('metadata_errors', []))
+    )
+    if validation_status == 'FAIL':
+        status_message = format_failure_message(
+            f"{max(gates_count, len(validation_errors), 1)} validation failure(s)",
+            validation_errors,
+        )
+    elif validation_status == 'WARN':
+        status_message = "OCM version gate analysis completed with warnings (mock/fallback data)"
+    else:
+        status_message = (
+            f"{len(analysis_results.get('common_gates', []))} common gate(s); "
+            f"{len(analysis_results.get('new_gates', []))} new gate(s)"
+        )
+
+    generate_status_report(
+        check_number=7,
+        check_name="OCM Version Gates",
+        status=validation_status,
+        details=build_status_details(
+            status_message,
+            validation_errors if validation_errors else None,
+            gates_count=max(gates_count, len(validation_errors)),
+            deprecated_gates_count=len(analysis_results.get('deprecated_gates', [])),
+            new_gates_count=len(analysis_results.get('new_gates', [])),
+            is_mock_data=is_mock,
+        ),
+        report_dir=args.report_dir,
+    )
 
     if validation_status == 'FAIL':
         log_error("=" * 60)
