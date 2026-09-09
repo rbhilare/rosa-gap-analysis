@@ -14,6 +14,7 @@ make lint           # same target Prow will run
 ## Structure
 
 ```
+tests/                          # pytest (make test)
 scripts/
 ├── gap-aws-sts.py              # AWS STS analysis
 ├── gap-gcp-wif.py              # GCP WIF analysis
@@ -57,14 +58,13 @@ scripts/
 
 ## Testing
 
-Prow presubmit (once wired in `openshift/release`) runs `make lint`. Locally:
-
 ```bash
+make test                    # pytest (tests/)
 make lint                    # Python compile, ruff, shellcheck, Jinja2, orchestrator
 pre-commit run --all-files   # make lint plus whitespace/YAML/gitleaks
 ```
 
-Full gap analysis still needs `oc`, OCM, and network:
+`tests/` covers version resolution, template data flow, and shared libraries. Full gap analysis still needs `oc`, network, and optionally `ocm`/`rosa`:
 
 ```bash
 # Test scripts

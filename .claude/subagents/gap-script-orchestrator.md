@@ -18,6 +18,8 @@ model: sonnet
 
 I orchestrate all related changes when gap analysis scripts are modified.
 
+**M4 baseline:** 13 checks; next new check is **#14**; insert before `feature-gates` in `gap-all.sh`; feature gates (check #8) always runs last. See `.claude/rules/gap-script-orchestration.md` for the full table.
+
 ## What I Do
 
 When you add/update/remove a gap analysis script, I:
@@ -166,7 +168,7 @@ I provide a summary report:
 
 Change Detected: [NEW | UPDATE | REMOVE]
 Script: scripts/gap-foo.py
-Check Number: #7
+Check Number: #14
 
 ✅ Completed Actions:
   • Created templates/foo.html.j2
@@ -183,7 +185,7 @@ Check Number: #7
 
 📋 Pre-commit Checklist:
   [✓] Script follows standard import pattern
-  [✓] Templates exist (MD + HTML)
+  [✓] HTML template exists
   [✓] gap-all.sh updated
   [✓] generate-combined-report.py updated
   [✓] Check number assigned
@@ -196,7 +198,7 @@ Check Number: #7
 
 **User adds `scripts/gap-network.py`:**
 
-I detect the new file, assign check #7, create stub templates, update gap-all.sh to run it before feature gates, create a skill file, update all documentation tables, and provide a summary of changes.
+I detect the new file, assign check #14, create stub templates, update gap-all.sh to run it before feature gates, create a skill file, update all documentation tables, and provide a summary of changes.
 
 **User modifies `scripts/gap-aws-sts.py`:**
 

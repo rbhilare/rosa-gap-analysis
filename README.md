@@ -9,7 +9,7 @@ Automated tools and AI-assisted analysis for comparing cloud credential policies
 ```bash
 make setup       # Install Python deps and pre-commit hook
 make lint        # Static checks (same target as Prow)
-make test        # Unit tests (when tests/ exists)
+make test        # Unit tests (tests/)
 ```
 
 ## Overview
@@ -48,19 +48,16 @@ See [Validation Checks](docs/validation-checks.md) for detailed information abou
 - 📦 **Container-Based**: Pre-built container image for OpenShift CI (Prow)
 - 🔗 **PR Link Tracking**: Automatic GitHub PR attribution for unexpected managed-cluster-config changes
 
-## Quick Start
-
 ### Installation
 
 ```bash
-# Install prerequisites
-pip install pyyaml
+pip install -r requirements.txt   # or: make setup
 
 # Download OpenShift CLI
-curl -L https://mirror.openshift.com/pub/openshift-v4/clients/ocp/stable/openshift-client-linux.tar.gz | tar xz
+curl -L https://mirror.openshift.com/pub/openshift-v4/clients/ocp/stable/openshift-client-linux.tar.gz | tar xz -C /usr/local/bin
 ```
 
-See [Installation Guide](docs/getting-started.md) for detailed setup instructions.
+See [Installation Guide](docs/getting-started.md) for detailed setup. Optional: `ocm`, `rosa` (channel/marketplace/version gates), `gh` (PR link detection).
 
 ### Run Gap Analysis
 
@@ -171,7 +168,7 @@ See [Validation Checks](docs/validation-checks.md#version-resolution) for detail
 ## Documentation
 
 - [📘 Overview](docs/overview.md) - What gap analysis does and how it works
-- [✅ Validation Checks](docs/validation-checks.md) - Details about all 8 validation checks
+- [✅ Validation Checks](docs/validation-checks.md) - Details about all 13 validation checks
 - [🚀 Getting Started](docs/getting-started.md) - Installation and basic usage
 - [⚙️ Configuration](docs/configuration.md) - CLI arguments, environment variables, version resolution
 - [🔧 Development](docs/development.md) - Contributing and customization
@@ -179,6 +176,7 @@ See [Validation Checks](docs/validation-checks.md#version-resolution) for detail
 **Additional Resources:**
 - [📊 Report Documentation](docs/reports.md) - Report formats and viewing
 - [🐳 Container Image](ci/README.md) - CI container image details
+- [GA Readiness Validation](docs/ga-readiness-validation.md) - Standalone pre-GA script for SREs (not in CI pipeline)
 
 ## Repository Structure
 

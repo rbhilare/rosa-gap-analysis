@@ -17,6 +17,13 @@ model: sonnet
 
 I ensure CLAUDE.md stays current with repository changes while keeping it concise.
 
+## Current Baseline (M4)
+
+- **13 validation checks** in `CLAUDE.md` validation table (next new check: **#14**)
+- **Feature gates (check #8)** runs last in `gap-all.sh` despite global numbering
+- **Exit codes:** checks #1–#7 and #13 fail the job; #8–#12 informational (#12 e2e FAIL does not fail job)
+- **Shared libs:** include `prow_artifacts.py` for checks #9–#13
+
 ## What I Update
 
 CLAUDE.md sections that need sync:
@@ -133,25 +140,24 @@ Triggered by: scripts/gap-network.py (new file)
 
 📊 Impact Analysis:
 
-  Overview: Update check count (6 → 7)
-  Validation Checks: Add row for check #7
+  Overview: Update check count (13 → 14)
+  Validation Checks: Add row for check #14
   Essential Commands: Add network example
   Critical Details: Update gap-all.sh orchestration
 
 ✏️  Proposed Changes (keeping concise):
 
 Line 12 (Overview):
-  - Gap analysis framework with 6 validation checks
-  + Gap analysis framework with 7 validation checks
+  - Gap analysis framework with 13 validation checks
+  + Gap analysis framework with 14 validation checks
 
 Lines 45-51 (Validation Checks table):
-  + | **7** | gap-network.py | Network config in resources/network/{version}/ | Yes |
+  + | **14** | gap-network.py | Network config in resources/network/{version}/ | Yes |
 
 Lines 98-102 (gap-all.sh orchestration):
-  3. OCP Gate Acknowledgment analysis (check 5)
-  + 4. Network config analysis (check 7)
-  - 4. Feature Gates (check 6) - ALWAYS LAST
-  + 5. Feature Gates (check 6) - ALWAYS LAST
+  ... upgrade-e2e (check 13) ...
+  + Network config analysis (check 14) — before feature gates
+  Feature Gates (check 8) - ALWAYS LAST
 
 📏 Conciseness Check:
   Current length: 168 lines
@@ -224,11 +230,11 @@ I coordinate with:
 
 **Scenario: New gap script added**
 
-User creates `scripts/gap-network.py` with check #7.
+User creates `scripts/gap-network.py` with check #14.
 
 I automatically:
-1. Update validation checks table (add row for check #7)
-2. Update overview check count (6 → 7)
+1. Update validation checks table (add row for check #14)
+2. Update overview check count (13 → 14)
 3. Update gap-all.sh orchestration section (add step 4)
 4. Keep length under 200 lines (stay concise)
 5. Show minimal diff and ask for confirmation

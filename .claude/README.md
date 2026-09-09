@@ -15,6 +15,8 @@ When gap analysis scripts are added, updated, or removed, multiple related files
 
 **Pain Point**: Manually tracking and updating all these dependencies is error-prone and time-consuming.
 
+**Current state (M4):** 13 validation checks; `gap-all.sh` runs 11 `gap-*.py` scripts (feature gates last); combined reports via `GAP_FULL_REPORT=1`; job fails on checks #1–#7 and #13 only (check #12 e2e FAIL is informational). See `.claude/rules/gap-script-orchestration.md` for the authoritative table.
+
 ## Solution
 
 Automated orchestration using Claude Code:
@@ -130,7 +132,7 @@ Minimal configuration for:
 8. ✅ Provides comprehensive change report
 
 **You commit:**
-9. ✅ `pre-commit run` (or `make lint`) validates before push
+9. ✅ `make test` and `make lint` (or `pre-commit run`) validate before push
 
 ### Updating an Existing Gap Script
 

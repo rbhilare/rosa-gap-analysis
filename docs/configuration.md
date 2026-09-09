@@ -21,9 +21,20 @@ All Python scripts support:
 ```bash
 --version <version>      # Single version (auto-resolves baseline and target)
 --dry-run                # Show resolved versions without running analysis
+--steps <steps>          # Comma-separated subset (default: all)
+                         # Values: aws, gcp, ocp, versions-channels, ocm-version-gate,
+                         #   api-resources, critical-alerts, cluster-install, e2e-validation,
+                         #   upgrade-e2e, feature-gates
 ```
 
 **Note:** For gap-all.sh, `--baseline` and `--target` must be used together, or use `--version` for single-version input.
+
+**Examples:**
+
+```bash
+./scripts/gap-all.sh --version 4.22 --steps aws,gcp
+./scripts/gap-all.sh --steps upgrade-e2e
+```
 
 ## Environment Variables
 
@@ -33,8 +44,12 @@ TARGET_VERSION=<version>     # Override target (must be used with BASE_VERSION)
                              # Supports special values: NIGHTLY, CANDIDATE
 OPENSHIFT_VERSION=<version>  # Single version (auto-resolves baseline and target)
 REPORT_DIR=<path>            # Report directory
-OCM_TOKEN=<token>            # OCM Offline Token used to query live OCM API endpoints
-                             # If unset, OCM checks will fall back to safe dry-run mode
+GAP_FULL_REPORT=<0|1>        # 1 (default via gap-all.sh): skip per-check HTML, combined report only
+OCM_TOKEN=<token>            # OCM offline token (checks 6–7); gap-all.sh logs in via ocm_auth.sh
+OCM_CLIENT_ID=<id>           # Alternative to OCM_TOKEN (with OCM_CLIENT_SECRET)
+OCM_CLIENT_SECRET=<secret>
+OCM_URL=<url>                # Optional OCM API URL (e.g. integration/staging)
+                             # Without credentials, checks 6–7 fall back gracefully (WARN/mock)
 ```
 
 **Note:** For gap-all.sh, `BASE_VERSION` and `TARGET_VERSION` must be used together, or use `OPENSHIFT_VERSION` for single-version input.

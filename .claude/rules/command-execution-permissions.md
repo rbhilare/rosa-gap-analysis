@@ -475,8 +475,9 @@ Proceed? [y/n]
 [Runs: ls /tmp/gap-test]
 
 Reports generated in /tmp/gap-test/:
-- gap-analysis-full_4.21_to_4.22_*.md
 - gap-analysis-full_4.21_to_4.22_*.html
+- gap-analysis-full_4.21_to_4.22_*.json
+- status-check-*.json
 ```
 
 **No prompts needed** - All operations in /tmp.

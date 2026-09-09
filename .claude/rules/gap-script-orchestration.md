@@ -11,6 +11,29 @@ Read these rules first:
 **This rule defines WHAT needs updating when gap scripts change.**
 **Those rules define HOW to get user approval before making changes.**
 
+## Current Baseline (M4 — keep docs/skills in sync with this)
+
+| Global check # | Script | `gap-all.sh` step | Job impact |
+|----------------|--------|-------------------|------------|
+| 1–2 | `gap-aws-sts.py` | `aws` | FAIL → exit 1 |
+| 3–4 | `gap-gcp-wif.py` | `gcp` | FAIL → exit 1 |
+| 5 | `gap-ocp-gate-ack.py` | `ocp` | FAIL → exit 1 |
+| 6 | `gap-versions-channels.py` | `versions-channels` | FAIL → exit 1 |
+| 7 | `gap-ocm-version-gate.py` | `ocm-version-gate` | FAIL → exit 1 |
+| 8 | `gap-feature-gates.py` | `feature-gates` | Informational (always last) |
+| 9 | `gap-api-resources.py` | `api-resources` | Informational; SKIP if no snapshot |
+| 10 | `gap-critical-alerts.py` | `critical-alerts` | Informational; SKIP if no snapshot |
+| 11 | `gap-cluster-install.py` | `cluster-install` | Informational; SKIP if no snapshot |
+| 12 | `gap-e2e-validation.py` | `e2e-validation` | Informational; report FAIL does not fail job |
+| 13 | `gap-upgrade-e2e.py` | `upgrade-e2e` | FAIL → exit 1 |
+
+**Orchestration notes:**
+- **13 checks** today; next new check is **#14** (insert before `feature-gates` in `gap-all.sh`).
+- `gap-all.sh` sets `GAP_FULL_REPORT=1` by default (per-check JSON + `status-check-<n>.json` + combined HTML/JSON).
+- `--steps` values: `aws,gcp,ocp,versions-channels,ocm-version-gate,api-resources,critical-alerts,cluster-install,e2e-validation,upgrade-e2e,feature-gates` (not `ocp-gate`).
+- Standalone GA script: `scripts/prod/gap-ga-validation.py` (not in `gap-all.sh` / CI pipeline).
+- Unit tests: `make test` (`tests/`).
+
 ## Orchestration Instructions
 
 **IMPORTANT**: When you (Claude) detect that gap scripts have been modified (via user message, hook output, or file diff), you MUST:
@@ -65,7 +88,7 @@ This is a high-impact change affecting multiple areas.
 ### Files to Update:
 1. scripts/gap-all.sh (add execution step before feature gates)
 2. scripts/generate-combined-report.py (add to aggregation)
-3. docs/validation-checks.md (add check #7)
+3. docs/validation-checks.md (add check #14 — next after current 13)
 4. README.md (update validation checks table)
 5. CLAUDE.md (update validation table)
 
@@ -130,10 +153,11 @@ I've detected a new gap script. Let me orchestrate all the related changes.
 
 ## Critical Ordering Rules
 
-1. **Feature Gates ALWAYS runs last** in `gap-all.sh` - even when new scripts added
-2. **Check numbers are globally sequential** - new checks get next available number
-3. **Informational checks** (like feature gates) should NOT cause exit 1
-4. **Validation checks** (resources/acks) SHOULD cause exit 1 on FAIL
+1. **Feature Gates (check #8) ALWAYS runs last** in `gap-all.sh` — even when new scripts are added (new checks run before it)
+2. **Check numbers are globally sequential** — next new check is **#14** (after current 1–13)
+3. **Informational checks (#8–#12)** must not exit 1 on validation FAIL/SKIP; check #12 uses `status-check` status `WARNING` when e2e tests fail
+4. **Standard checks (#1–#7, #13)** exit 1 on validation FAIL
+5. **Execution errors** on any script (including informational) exit 1 and fail `gap-all.sh`
 
 ## Version 5.x Platform Rules
 
@@ -318,36 +342,28 @@ if __name__ == '__main__':
 
 ## gap-all.sh Integration Pattern
 
-Add script execution in this order:
-1. AWS STS (checks 1-2)
-2. GCP WIF (checks 3-4)
-3. OCP Gate Ack (check 5)
-4. Versions & Channels (check 6)
-5. OCM Version Gates (check 7)
-6. **[NEW SCRIPT HERE]** (check N)
-7. Feature Gates (check 8) - ALWAYS LAST
+**Current execution order** (feature gates always last):
 
-```bash
-# Run <New> analysis
-log_info ""
-log_info "Running <New> Gap Analysis..."
-if python3 "${SCRIPT_DIR}/gap-<new>.py" \
-    --baseline "$BASELINE" \
-    --target "$TARGET" \
-    --report-dir "$REPORT_DIR" \
-    $VERBOSE_FLAG 2>&1; then
-    new_result=0
-else
-    new_result=1
-fi
-```
+1. AWS STS (checks 1–2) — step `aws`
+2. GCP WIF (checks 3–4) — step `gcp`
+3. OCP Gate Ack (check 5) — step `ocp`
+4. Versions & Channels (check 6) — step `versions-channels`
+5. OCM Version Gates (check 7) — step `ocm-version-gate`
+6. API Resources (check 9) — step `api-resources`
+7. Critical Alerts (check 10) — step `critical-alerts`
+8. Cluster Install (check 11) — step `cluster-install`
+9. Target E2E (check 12) — step `e2e-validation`
+10. Upgrade E2E (check 13) — step `upgrade-e2e`
+11. **[NEW SCRIPT HERE]** (check #14+) — insert before feature gates
+12. Feature Gates (check 8) — step `feature-gates` — **ALWAYS LAST**
 
-Update exit logic:
-```bash
-if [[ $aws_result -eq 1 ]] || [[ $gcp_result -eq 1 ]] || ... || [[ $new_result -eq 1 ]]; then
-    exit 1
-fi
-```
+When adding a script, update in `gap-all.sh`:
+- `STEPS` validation list and default `STEPS_ARRAY`
+- `check_num`, `check_display_num`, `check_name`, `check_type` (`standard` vs `informational`)
+- `should_run_step` execution block + `read_check_status`
+- `usage()` help text
+
+Exit logic uses `check_results` + `check_type` — informational validation FAIL must still exit 0 from the Python script; only execution errors should set `check_results=1`.
 
 ## Skill File Structure
 
@@ -388,6 +404,8 @@ Before committing changes involving gap scripts:
 - [ ] CLAUDE.md validation table updated
 - [ ] README.md validation table updated
 - [ ] Feature gates still runs LAST in gap-all.sh
+- [ ] `make test` and `make lint` pass
+- [ ] `docs/reports.md` updated if status-check or combined-report behavior changes
 
 ## Documentation Update Requirements
 
@@ -402,7 +420,7 @@ Before committing changes involving gap scripts:
 - Update essential commands if new patterns introduced
 
 **README.md:**
-- Update validation checks table (6 checks → N checks)
+- Update validation checks table (currently **13 checks** → N after adding a script)
 - Update examples if relevant
 
 ## Anti-Patterns to Avoid
@@ -412,7 +430,8 @@ Before committing changes involving gap scripts:
 ❌ **Don't** add scripts after feature gates in gap-all.sh - violates ordering rule
 ❌ **Don't** forget to update generate-combined-report.py - combined report will be incomplete
 ❌ **Don't** use different template variable names - breaks consistency
-❌ **Don't** exit 1 for informational checks - creates false CI failures
+❌ **Don't** exit 1 for informational **validation** results (checks #8–#12) — creates false CI failures
+❌ **Don't** use `--steps ocp-gate` — valid step name is `ocp`
 
 ## Quick Reference Commands
 

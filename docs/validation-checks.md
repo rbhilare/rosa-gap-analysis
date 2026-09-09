@@ -505,17 +505,26 @@ python3 ./scripts/gap-aws-sts.py --baseline 4.23 --target 5.0
 
 ## Exit Codes
 
-### Individual Scripts (gap-aws-sts.py, gap-gcp-wif.py, gap-ocp-gate-ack.py, gap-versions-channels.py, gap-ocm-version-gate.py, gap-e2e-validation.py, gap-upgrade-e2e.py)
-- **Exit 0 (PASS):** All relevant checks passed OR dry-run mode (Checks #12 and #13 also exit 0 on SKIP)
-- **Exit 1 (FAIL):** One or more checks failed OR execution error
+### Standard scripts (checks #1–#7, #13)
 
-### Informational Scripts (gap-feature-gates.py, gap-api-resources.py, gap-critical-alerts.py, gap-cluster-install.py, gap-e2e-validation.py)
-- **Exit 0 (PASS):** Always (informational only) OR dry-run mode. Check #12 still records FAIL in the report when e2e tests failed.
-- **Exit 1 (FAIL):** Only on execution error (network, invalid version, etc.)
+`gap-aws-sts.py`, `gap-gcp-wif.py`, `gap-ocp-gate-ack.py`, `gap-versions-channels.py`, `gap-ocm-version-gate.py`, `gap-upgrade-e2e.py`
 
-### Combined Script (gap-all.sh)
-- **Exit 0 (PASS):** All checks 1-7, 12, and 13 passed (checks 8-11 are informational) OR dry-run mode
-- **Exit 1 (FAIL):** Any of checks 1-7, 12, or 13 failed OR execution error
+- **Exit 0:** Validation PASS, SKIP (check #13 only), or dry-run
+- **Exit 1:** Validation FAIL or execution error
+
+### Informational scripts (checks #8–#12)
+
+`gap-feature-gates.py`, `gap-api-resources.py`, `gap-critical-alerts.py`, `gap-cluster-install.py`, `gap-e2e-validation.py`
+
+- **Exit 0:** Always on successful execution — including when the report records FAIL (check #12 uses `status-check` status `WARNING` so the orchestrator does not fail) or SKIP (missing Prow/JUnit artifacts)
+- **Exit 1:** Execution error only (network, invalid version, unhandled exception)
+
+### Combined script (`gap-all.sh`)
+
+- **Exit 0:** Checks #1–#7 and #13 pass (or #13 SKIP); checks #8–#12 complete without execution errors; or dry-run
+- **Exit 1:** Any standard check (#1–#7, #13) FAIL, or any executed script exits non-zero (including execution errors on informational checks)
+
+See [reports.md](reports.md#exit-code-contract) for the `status-check-*.json` mapping.
 
 ## CI/CD Integration
 

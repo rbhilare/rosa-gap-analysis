@@ -104,7 +104,7 @@ Adding CHECK #2 is a high-impact change.
 
 ### Files Affected:
 1. scripts/gap-aws-sts.py (validation logic)
-2. scripts/templates/aws-sts.{md,html}.j2 (display 2 checks)
+2. scripts/templates/aws-sts.html.j2 (display 2 checks)
 3. skills/aws-sts-gap/SKILL.md (document CHECK #2)
 4. docs/validation-checks.md (add CHECK #2 section)
 

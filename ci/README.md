@@ -13,17 +13,25 @@ The `Containerfile` defines a container image with all the tools required to run
 | **oc CLI** | 4.21 (stable) | Extract CredentialsRequests from OpenShift release images |
 | **Python 3** | System package | Main runtime for gap analysis scripts |
 | **PyYAML** | System package | YAML parsing for credential requests and configuration |
+| **Jinja2** | pip | HTML report templates |
 | **curl** | System package | Fetch data from Sippy API (releases, feature gates) |
+| **jq** | System package | JSON parsing in shell scripts |
+| **yq** | Latest release | WIF template validation in fix workflow |
+| **git** | System package | Sparse checkout of managed-cluster-config |
+| **gh** | GitHub CLI | PR creation and GitHub API fallback |
+| **make** | System package | managed-cluster-config policy generation in fix workflow |
 | **bash** | System package | Execute gap-all.sh orchestrator script |
-| **Gap Analysis Scripts** | Latest from repo | Pre-installed Python and bash scripts for gap analysis workflows |
+| **Gap Analysis Scripts** | Latest from repo | All 13 checks pre-installed at `/gap-analysis/scripts/` |
 
 ### Why These Tools?
 
-- **oc CLI**: Required for `oc adm release extract --credentials-requests --cloud={aws,gcp}` to extract credential requests from release payloads
-- **Python 3 + PyYAML**: Main runtime for gap analysis scripts (gap-aws-sts.py, gap-gcp-wif.py, gap-feature-gates.py), YAML processing, report generation
-- **curl**: Fetches release data and feature gates from Sippy API
-- **bash**: Orchestrator script (gap-all.sh) that calls Python analysis scripts and generates combined reports
-- **Gap Analysis Scripts**: Pre-installed in `/gap-analysis/scripts/` and added to PATH for direct execution
+- **oc CLI**: `oc adm release extract --credentials-requests --cloud={aws,gcp}` for policy validation (checks 1–4)
+- **Python 3 + PyYAML + Jinja2**: All gap scripts, YAML processing, combined report generation
+- **curl**: Sippy API (releases, feature gates); Prow GCS artifact fetch for checks 9–13 (`prow_artifacts.py`)
+- **jq / yq**: CI failure parsing and WIF validation in autofix workflow
+- **git / gh / make**: `fix-prow-failure.sh` clones managed-cluster-config, runs `make`, opens PRs
+- **bash**: `gap-all.sh` runs all checks, writes `status-check-*.json`, invokes `generate-combined-report.py`
+- **Gap Analysis Scripts**: Added to PATH; `GAP_FULL_REPORT=1` in CI skips per-check HTML
 
 ## Base Image
 
