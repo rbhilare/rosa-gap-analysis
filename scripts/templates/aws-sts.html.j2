@@ -270,6 +270,59 @@
         </table>
         {% endif %}
 
+        {% if validation_details %}
+        <h2>Validation Status</h2>
+        <div class="alert {% if validation_result == 'FAIL' %}error{% else %}success{% endif %}">
+            <strong>{% if validation_result == 'FAIL' %}❌ Validation Failed{% else %}✅ Validation Passed{% endif %}</strong>
+            {% if validation_checked is defined and not validation_checked %}
+            <p><em>Validation skipped for this version (not applicable).</em></p>
+            {% endif %}
+            <ul style="margin: 10px 0 0 0; padding-left: 20px;">
+            {% set minor_version = target.split('.')[0] + '.' + target.split('.')[1] %}
+            {% if validation_result == 'FAIL' %}
+                {% if validation_details.check_1_resources.status == 'FAIL' %}
+                    <li><strong>CHECK #1: Resources Validation - FAILED</strong></li>
+                    {% for error in validation_details.check_1_resources.errors %}
+                    {% if 'https://' in error %}
+                        {% set parts = error.split('https://') %}
+                        <li style="margin-left: 20px;">{{ parts[0] }}<a href="https://{{ parts[1].strip() }}" target="_blank">{{ parts[1].strip() }}</a></li>
+                    {% else %}
+                        <li style="margin-left: 20px;">{{ error }}</li>
+                    {% endif %}
+                    {% endfor %}
+                {% else %}
+                    <li><strong>CHECK #1: Resources Validation - PASSED</strong></li>
+                    <li style="margin-left: 20px;">Location: <a href="https://github.com/openshift/managed-cluster-config/tree/master/resources/sts/{{ minor_version }}" target="_blank">resources/sts/{{ minor_version }}/</a></li>
+                    <li style="margin-left: 20px;">Validated {{ validation_details.check_1_resources.file_count }} policy file(s)</li>
+                {% endif %}
+                {% if validation_details.check_2_admin_ack.status == 'FAIL' %}
+                    <li><strong>CHECK #2: Admin Acknowledgment - FAILED</strong></li>
+                    {% for error in validation_details.check_2_admin_ack.errors %}
+                    <li style="margin-left: 20px;">{{ error }}</li>
+                    {% endfor %}
+                {% else %}
+                    <li><strong>CHECK #2: Admin Acknowledgment - PASSED</strong></li>
+                    <li style="margin-left: 20px;">Location: <a href="https://github.com/openshift/managed-cluster-config/tree/master/deploy/osd-cluster-acks/sts/{{ minor_version }}" target="_blank">deploy/osd-cluster-acks/sts/{{ minor_version }}/</a></li>
+                    {% if validation_details.check_2_admin_ack.expected_baseline %}
+                    <li style="margin-left: 20px;">Validated config.yaml (baseline: {{ validation_details.check_2_admin_ack.expected_baseline }})</li>
+                    {% endif %}
+                    <li style="margin-left: 20px;">Validated CloudCredential acknowledgment file</li>
+                {% endif %}
+            {% else %}
+                <li><strong>CHECK #1: Resources Validation - PASSED</strong></li>
+                <li style="margin-left: 20px;">Location: <a href="https://github.com/openshift/managed-cluster-config/tree/master/resources/sts/{{ minor_version }}" target="_blank">resources/sts/{{ minor_version }}/</a></li>
+                <li style="margin-left: 20px;">Validated {{ validation_details.check_1_resources.file_count }} policy file(s)</li>
+                <li><strong>CHECK #2: Admin Acknowledgment - PASSED</strong></li>
+                <li style="margin-left: 20px;">Location: <a href="https://github.com/openshift/managed-cluster-config/tree/master/deploy/osd-cluster-acks/sts/{{ minor_version }}" target="_blank">deploy/osd-cluster-acks/sts/{{ minor_version }}/</a></li>
+                {% if validation_details.check_2_admin_ack.expected_baseline %}
+                <li style="margin-left: 20px;">Validated config.yaml (baseline: {{ validation_details.check_2_admin_ack.expected_baseline }})</li>
+                {% endif %}
+                <li style="margin-left: 20px;">Validated CloudCredential acknowledgment file</li>
+            {% endif %}
+            </ul>
+        </div>
+        {% endif %}
+
         {% if validation_details and validation_details.check_1_resources and validation_details.check_1_resources.warnings_structured %}
         <h2>⚠️ Warnings</h2>
         <div style="background-color: #fff3e0; padding: 20px; border-left: 4px solid #ff9800; border-radius: 5px; margin: 20px 0;">

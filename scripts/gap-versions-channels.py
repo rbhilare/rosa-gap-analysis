@@ -604,6 +604,7 @@ Exit Codes:
         'is_z_stream': is_z_stream,
         'timestamp': datetime.now().isoformat(),
         'validation_result': validation_result,
+        'validation_errors': validation_errors,
         'channel_availability': channel_analysis,
         'marketplace': marketplace_analysis,
         'summary': {
