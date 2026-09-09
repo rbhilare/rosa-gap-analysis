@@ -463,6 +463,7 @@ def main():
             'target': args.target,
             'baseline_minor': baseline_minor,
             'target_minor': target_minor,
+            'validation_errors': status_errors,
             'summary': {
                 'baseline_channels': [],
                 'target_channels': [],

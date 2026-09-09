@@ -138,6 +138,12 @@
             <p><strong>Baseline Version:</strong> <code>{{ baseline }}</code></p>
             <p><strong>Target Version:</strong> <code>{{ target }}</code></p>
             <p><strong>Filter:</strong> Hypershift-relevant only (Default:Hypershift, DevPreviewNoUpgrade:Hypershift, TechPreviewNoUpgrade:Hypershift)</p>
+            {% if validation_result is defined %}
+            <p><strong>Result:</strong> {{ validation_result }} (informational)</p>
+            {% endif %}
+            {% if note is defined and note %}
+            <p><strong>Note:</strong> {{ note }}</p>
+            {% endif %}
         </div>
 
         {% if is_z_stream %}

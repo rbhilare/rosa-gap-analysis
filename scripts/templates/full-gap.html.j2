@@ -849,6 +849,18 @@
             {% if aws_sts %}
             <h2 id="aws-sts">CHECK #1 & #2: AWS STS Policy Analysis</h2>
 
+            {% if aws_sts.aws_marketplace %}
+            <h3>AWS Marketplace Enablement</h3>
+            <div class="alert {% if aws_sts.aws_marketplace.status == 'PASS' %}success{% elif aws_sts.aws_marketplace.status == 'WARN' %}warning{% else %}error{% endif %}">
+                <p>{{ aws_sts.aws_marketplace.message }}</p>
+                {% if aws_sts.aws_marketplace.channels %}
+                <ul>{% for chan, results in aws_sts.aws_marketplace.channels.items() %}
+                <li><strong>{{ chan }}</strong>: ROSA Classic {% if results.rosa_classic %}✓{% else %}✗{% endif %}, HCP {% if results.rosa_hcp %}✓{% else %}✗{% endif %}</li>
+                {% endfor %}</ul>
+                {% endif %}
+            </div>
+            {% endif %}
+
             <h3>Policy Comparison</h3>
             {% set aws_added = aws_sts.comparison.actions.target_only|length %}
             {% set aws_removed = aws_sts.comparison.actions.baseline_only|length %}
@@ -1010,6 +1022,18 @@
             {% if gcp_wif %}
             <h2 id="gcp-wif">CHECK #3 & #4: GCP WIF Policy Analysis</h2>
 
+            {% if gcp_wif.gcp_marketplace %}
+            <h3>GCP Marketplace Enablement</h3>
+            <div class="alert {% if gcp_wif.gcp_marketplace.status == 'PASS' %}success{% elif gcp_wif.gcp_marketplace.status == 'WARN' %}warning{% else %}error{% endif %}">
+                <p>{{ gcp_wif.gcp_marketplace.message }}</p>
+                {% if gcp_wif.gcp_marketplace.channels %}
+                <ul>{% for chan, results in gcp_wif.gcp_marketplace.channels.items() %}
+                <li><strong>{{ chan }}</strong>: GCP Marketplace {% if results.gcp_marketplace %}✓{% else %}✗{% endif %}</li>
+                {% endfor %}</ul>
+                {% endif %}
+            </div>
+            {% endif %}
+
             <h3>Policy Comparison</h3>
             {% set gcp_added = gcp_wif.comparison.actions.target_only|length %}
             {% set gcp_removed = gcp_wif.comparison.actions.baseline_only|length %}
@@ -1157,6 +1181,18 @@
             </div>
             {% endif %}
 
+            {% if ocp_gate_ack.ocm_version_gates %}
+            <h3>OCM Version Gates (embedded in CHECK #5)</h3>
+            <div class="alert {% if ocp_gate_ack.ocm_version_gates.status == 'PASS' %}success{% elif ocp_gate_ack.ocm_version_gates.status == 'WARN' %}warning{% else %}error{% endif %}">
+                <p><strong>Status:</strong> {{ ocp_gate_ack.ocm_version_gates.status }} — {{ ocp_gate_ack.ocm_version_gates.message }}</p>
+                {% if ocp_gate_ack.ocm_version_gates.gates %}
+                <ul>{% for gate in ocp_gate_ack.ocm_version_gates.gates %}
+                <li><code>{{ gate.id }}</code> (prefix <code>{{ gate.version_raw_id_prefix }}</code>)</li>
+                {% endfor %}</ul>
+                {% endif %}
+            </div>
+            {% endif %}
+
             <h3>Validation Status</h3>
             {% set minor_version = ocp_gate_ack.ack_check_version.split('.')[0] + '.' + ocp_gate_ack.ack_check_version.split('.')[1] %}
             <div class="alert {% if ocp_gate_ack.summary.gates_requiring_ack == 0 or ocp_gate_ack.validation_result == 'PASS' %}success{% else %}error{% endif %}">
@@ -1175,9 +1211,9 @@
                     {% if ocp_gate_ack.summary.unacknowledged > 0 %}
                         <li style="margin-left: 20px;">{{ ocp_gate_ack.summary.unacknowledged }} gate(s) not acknowledged out of {{ ocp_gate_ack.summary.gates_requiring_ack }}</li>
                     {% endif %}
-                    {% if not ocp_gate_ack.config_validation.valid %}
-                        {% for error in ocp_gate_ack.config_validation.errors %}
-                        <li style="margin-left: 20px;">Config error: {{ error }}</li>
+                    {% if ocp_gate_ack.structure_validation and not ocp_gate_ack.structure_validation.valid %}
+                        {% for error in ocp_gate_ack.structure_validation.errors %}
+                        <li style="margin-left: 20px;">Structure error: {{ error }}</li>
                         {% endfor %}
                     {% endif %}
                 {% else %}
@@ -1214,6 +1250,15 @@
                 {% endfor %}
             </ul>
             {% endif %}
+
+            {% if ocp_gate_ack.analysis.extra_acks %}
+            <h3>ℹ️ Extra Acknowledgments ({{ ocp_gate_ack.analysis.extra_acks|length }})</h3>
+            <ul class="permission-list">
+                {% for ack in ocp_gate_ack.analysis.extra_acks %}
+                <li><code>{{ ack }}</code></li>
+                {% endfor %}
+            </ul>
+            {% endif %}
             {% endif %}
             {% endif %}
 
@@ -1228,6 +1273,19 @@
                     <li><strong>Target GA status:</strong> {% if versions_channels.summary.target_is_ga %}GA{% else %}Pre-GA{% endif %}</li>
                 </ul>
             </div>
+
+            {% if versions_channels.validation_errors %}
+            <div class="alert error">
+                <strong>Validation errors</strong>
+                <ul>{% for err in versions_channels.validation_errors %}<li>{{ err }}</li>{% endfor %}</ul>
+            </div>
+            {% endif %}
+            {% if versions_channels.summary.api_errors %}
+            <div class="alert warning">
+                <strong>OCM API warnings</strong>
+                <ul>{% for err in versions_channels.summary.api_errors %}<li>{{ err }}</li>{% endfor %}</ul>
+            </div>
+            {% endif %}
 
             <h3>Channel Availability ({{ versions_channels.target_minor }})</h3>
             <table>
@@ -1429,6 +1487,18 @@
                 </div>
             </div>
 
+            {% if ocm_version_gate.comparison.new_gates %}
+            <h3>New Gates (target only)</h3>
+            <ul>{% for gate in ocm_version_gate.comparison.new_gates %}<li><code>{{ gate.label if gate.label is defined else gate }}</code>{% if gate.description is defined %} — {{ gate.description }}{% endif %}</li>{% endfor %}</ul>
+            {% endif %}
+            {% if ocm_version_gate.comparison.deprecated_gates %}
+            <h3>Removed Gates (baseline only)</h3>
+            <ul>{% for gate in ocm_version_gate.comparison.deprecated_gates %}<li><code>{{ gate.label if gate.label is defined else gate }}</code>{% if gate.description is defined %} — {{ gate.description }}{% endif %}</li>{% endfor %}</ul>
+            {% endif %}
+            {% if ocm_version_gate.skipped_labels %}
+            <div class="alert warning"><strong>Skipped gate labels:</strong> {% for label in ocm_version_gate.skipped_labels %}<code>{{ label }}</code>{% if not loop.last %}, {% endif %}{% endfor %}</div>
+            {% endif %}
+
             <!-- Target Gates Details -->
             <h3>Target Version Gates ({{ ocm_version_gate.target_minor }}.x)</h3>
             {% if ocm_version_gate.gates_count.target > 0 %}
@@ -1517,6 +1587,7 @@
                     <tr><td>Newly deprecated CRD versions</td><td style="text-align: center;">{{ api_resources.summary.deprecated_crds }}</td></tr>
                     <tr><td>Managed-service new CRDs</td><td style="text-align: center;">{{ api_resources.summary.managed_new_crds }}</td></tr>
                     <tr><td>Managed-service deprecated CRDs</td><td style="text-align: center;">{{ api_resources.summary.managed_deprecated_crds }}</td></tr>
+                    <tr><td>Managed-service removed APIs</td><td style="text-align: center;">{{ api_resources.summary.managed_removed_apis }}</td></tr>
                 </tbody>
             </table>
             {% for topo in api_resources.topologies %}
@@ -1853,7 +1924,9 @@
                     <tr><td>Failures</td><td style="text-align: center;">{{ e2e_validation.summary.failures or 0 }}</td></tr>
                     <tr><td>Skipped tests</td><td style="text-align: center;">{{ e2e_validation.summary.skipped or 0 }}</td></tr>
                     <tr><td>Alert monitoring FAIL</td><td style="text-align: center;">{{ e2e_validation.summary.alert_monitoring_fail or 0 }}</td></tr>
+                    <tr><td>Alert monitoring PASS</td><td style="text-align: center;">{{ e2e_validation.summary.alert_monitoring_pass or 0 }}</td></tr>
                     <tr><td>Alert monitoring SKIP</td><td style="text-align: center;">{{ e2e_validation.summary.alert_monitoring_skip or 0 }}</td></tr>
+                    <tr><td>JUnit errors</td><td style="text-align: center;">{{ e2e_validation.summary.errors or 0 }}</td></tr>
                 </tbody>
             </table>
             {% for topo in e2e_validation.topologies %}
@@ -1910,6 +1983,16 @@
                     <tr><td>Skipped tests</td><td style="text-align: center;">{{ upgrade_e2e.summary.skipped or 0 }}</td></tr>
                     <tr><td>Degraded ClusterOperators</td><td style="text-align: center;">{{ upgrade_e2e.summary.degraded_operators or 0 }}</td></tr>
                     <tr><td>Unavailable ClusterOperators</td><td style="text-align: center;">{{ upgrade_e2e.summary.unavailable_operators or 0 }}</td></tr>
+                    {% if upgrade_e2e.summary.e2e_categories %}
+                    <tr><td>Workload test failures</td><td style="text-align: center;">{{ upgrade_e2e.summary.e2e_categories.workload or 0 }}</td></tr>
+                    <tr><td>Storage test failures</td><td style="text-align: center;">{{ upgrade_e2e.summary.e2e_categories.storage or 0 }}</td></tr>
+                    <tr><td>Network test failures</td><td style="text-align: center;">{{ upgrade_e2e.summary.e2e_categories.network or 0 }}</td></tr>
+                    <tr><td>Managed operator test failures</td><td style="text-align: center;">{{ upgrade_e2e.summary.e2e_categories.managed_operator or 0 }}</td></tr>
+                    {% endif %}
+                    <tr><td>Duration SKIP topologies</td><td style="text-align: center;">{{ upgrade_e2e.summary.duration_skip or 0 }}</td></tr>
+                    <tr><td>Pre-upgrade CO SKIP topologies</td><td style="text-align: center;">{{ upgrade_e2e.summary.pre_upgrade_skip or 0 }}</td></tr>
+                    <tr><td>Post-upgrade CO FAIL topologies</td><td style="text-align: center;">{{ upgrade_e2e.summary.post_upgrade_fail or 0 }}</td></tr>
+                    <tr><td>JUnit errors</td><td style="text-align: center;">{{ upgrade_e2e.summary.errors or 0 }}</td></tr>
                 </tbody>
             </table>
             {% for topo in upgrade_e2e.topologies %}

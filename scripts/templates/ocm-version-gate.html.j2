@@ -421,6 +421,23 @@
         </div>
         {% endif %}
 
+        {% if comparison.new_gates %}
+        <h2>New Gates (target only)</h2>
+        <ul>
+            {% for gate in comparison.new_gates %}
+            <li><code>{{ gate.label if gate.label is defined else gate }}</code>{% if gate.description is defined %} — {{ gate.description }}{% endif %}</li>
+            {% endfor %}
+        </ul>
+        {% endif %}
+        {% if comparison.deprecated_gates %}
+        <h2>Removed Gates (baseline only)</h2>
+        <ul>
+            {% for gate in comparison.deprecated_gates %}
+            <li><code>{{ gate.label if gate.label is defined else gate }}</code>{% if gate.description is defined %} — {{ gate.description }}{% endif %}</li>
+            {% endfor %}
+        </ul>
+        {% endif %}
+
         {% if comparison.common_gates|length > 0 %}
         <h2>Common Gates (present in both versions)</h2>
         <div style="margin-bottom: 32px;">
