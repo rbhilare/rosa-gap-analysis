@@ -756,9 +756,9 @@ Choose the right workflow for your needs:
 
 See also: [Analyzing CI Failures](#analyzing-ci-failures) and [Fixing Prow Failures and Creating PRs](#fixing-prow-failures-and-creating-prs)
 
-## Chai-bot MCC autofix
+## Chai-bot gap-analysis health report
 
-Daily Prow periodics stay in this repo. After they finish, chai-bot (ship-help-bot persona `rosa_engineering_public`) runs `.chai-bot/rosa_gap_mcc_autofix.md` and opens **one MCC PR per failing OCP minor** for CHECK #1–#5 failures.
+Daily Prow periodics stay in this repo. On Monday and Thursday at 10:00 UTC, chai-bot (ship-help-bot persona `rosa_engineering_public`) runs `.chai-bot/rosa_gap_analysis_health_report.md`: Slack scoreboard of gap-analysis periodics (7-day pass/fail %) and, when CHECK #1–#5 failed, **one MCC PR per failing OCP minor**.
 
 - Job discovery is a regex (`…-periodics-nightly-{major}-{minor}`), not a local job list
 - Same scripts as the laptop path: `./ci/analyze-prow-failure.sh` then `./ci/fix-prow-failure.sh --generate-only` (never LLM-written IAM JSON)
