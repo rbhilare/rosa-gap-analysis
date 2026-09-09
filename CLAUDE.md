@@ -225,9 +225,9 @@ from reporters import generate_html_report, generate_json_report
 - Requires `GH_TOKEN` unless `--generate-only` or `--dry-run`
 - Options: `--test-mode`, `--dry-run`, `--generate-only`, `--skip-if-pr-exists`, `--job-name`, `--job-id`, `--verbose`
 
-**Chai-bot MCC autofix (scheduled, not a Prow post-step):**
-- Instructions: `.chai-bot/rosa_gap_mcc_autofix.md` (included from ship-help-bot)
-- After daily periodics, chai-bot opens **one MCC PR per failing OCP minor** for CHECK #1–#5
+**Chai-bot gap-analysis health report (scheduled, not a Prow post-step):**
+- Instructions: `.chai-bot/rosa_gap_analysis_health_report.md` (included from ship-help-bot)
+- Runs Monday and Thursday 10:00 UTC. Slack scoreboard of gap-analysis periodics (7-day pass %) plus **MCC PR autofix** for CHECK #1–#5
 - Same scripts as the laptop path: `analyze-prow-failure.sh` (gcloud GCS download) then `fix-prow-failure.sh --generate-only`. Chai-bot opens the GitHub PR (`priv_scm_create_change_request`) instead of `--create-pr`
 - Does not open a second PR if one already exists for that OCP minor (branch `ocp-X.Y-gap-analysis-update` **or** title containing `Add OCP {minor} Gap Analysis`)
 
