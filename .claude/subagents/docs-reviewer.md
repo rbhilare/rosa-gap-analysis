@@ -15,6 +15,13 @@ model: sonnet
 
 I ensure documentation stays synchronized with code changes.
 
+## Current Baseline (M4)
+
+- **13 validation checks** (see `docs/validation-checks.md` and `CLAUDE.md` table)
+- **Job-failing checks:** #1–#7, #13 — **not** #12 (target E2E FAIL is informational)
+- **Reports:** `GAP_FULL_REPORT=1` in `gap-all.sh`; combined `gap-analysis-full_*.{html,json}` + per-check JSON + `status-check-<n>.json`
+- **Also update:** `ops-sop/docs/v4/howto/gap-analysis.md` when SOP-facing behavior changes
+
 ## What I Review
 
 When gap scripts or validation logic changes, I check:
@@ -86,8 +93,8 @@ For each doc file:
 
 ```
 Found discrepancies:
-- README.md says "6 validation checks" but found 7 scripts
-- docs/validation-checks.md missing check #7 description
+- README.md says "8 validation checks" but codebase has 13
+- docs/validation-checks.md says gap-all fails on check #12 (should be #13 only among E2E checks)
 - docs/configuration.md missing --new-flag argument
 - docs/reports.md template variable 'foo' not in reporters.py
 ```
@@ -120,12 +127,12 @@ Triggered by: scripts/gap-network.py (new file)
 🔍 Found Discrepancies:
 
 README.md:
-  ❌ Line 14: Says "6 validation checks" but should be "7"
-  ❌ Table missing row for Check #7
+  ❌ Line 14: Says "8 validation checks" but should be "13"
+  ❌ Table missing rows for Checks #9–#13
 
 docs/validation-checks.md:
-  ❌ Missing Check #7 entry in table
-  ❌ Missing detailed section for network validation
+  ❌ Missing Check #14 entry in table (after adding gap-network.py)
+  ❌ Exit codes section lists check #12 as job-failing (incorrect)
 
 docs/configuration.md:
   ✅ Up to date
@@ -136,11 +143,11 @@ docs/reports.md:
 ✏️  Suggested Updates:
 
 README.md (line 14):
-  - The framework performs **6 validation checks** across all scripts:
-  + The framework performs **7 validation checks** across all scripts:
+  - The framework performs **8 validation checks** across all scripts:
+  + The framework performs **13 validation checks** across all scripts:
 
 docs/validation-checks.md (line 16):
-  + | **7** | Network Config | Validates network configuration... | Exit code 1 on FAIL |
+  + | **14** | Network Config | Validates network configuration... | Exit code 1 on FAIL |
 
 Apply these updates? [y/n]
 ```
@@ -181,12 +188,12 @@ I coordinate with:
 
 **Scenario: New gap script added**
 
-User creates `scripts/gap-network.py` with check #7.
+User creates `scripts/gap-network.py` with check #14.
 
 I automatically:
-1. Detect README.md says "6 checks" → update to "7 checks"
-2. Add check #7 row to validation table in README.md
-3. Add detailed check #7 section to docs/validation-checks.md
+1. Detect README.md check count stale → update to **14 checks**
+2. Add check #14 row to validation table in README.md
+3. Add detailed check #14 section to docs/validation-checks.md
 4. Add network report format to docs/reports.md
 5. Show diff and ask for confirmation
 

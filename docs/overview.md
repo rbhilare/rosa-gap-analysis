@@ -46,17 +46,21 @@ Identifies changes between OpenShift versions through 13 validation checks:
 ```
 1. Specify versions (or auto-detect latest stable → candidate)
    ↓
-2. Extract credential requests / feature gates
+2. gap-all.sh runs 13 checks (policy, channels, Prow artifacts, E2E JUnit)
    ↓
-3. Compare and generate reports (HTML, JSON)
+3. Each script writes JSON + status-check-<n>.json
    ↓
-4. Review changes and assess impact
+4. generate-combined-report.py → gap-analysis-full_*.{html,json}
+   ↓
+5. Review combined report; job exits 1 if checks 1–7 or 13 fail
 ```
+
+**Orchestration:** `gap-all.sh` sets `GAP_FULL_REPORT=1` (default), so per-check HTML is skipped in CI; combined HTML aggregates all sections. Missing individual JSON is surfaced via `status-check-*.json` fallbacks in the combined report.
 
 ## Key Features
 
 - **Automated extraction** - Uses `oc adm release extract` and Sippy API
-- **Multi-format reports** - HTML and JSON
+- **Multi-format reports** - Per-check JSON, `status-check-*.json`, combined HTML/JSON
 - **Auto-detection** - Automatically finds latest versions
 - **CI/CD ready** - Exit codes designed for pipelines
 - **Template-based** - Jinja2 templates for easy customization
@@ -121,7 +125,8 @@ fi
 - Sippy API - GA version detection
 
 **OCM Version Gates:**
-- OCM API (`/api/clusters_mgmt/v1/version_gates`) via `ocm` CLI - Version gate configurations (optional, graceful fallback)
+- OCM API (`/api/clusters_mgmt/v1/version_gates`) via `ocm` CLI - Version gate configurations
+- Auth: `OCM_TOKEN`, `OCM_CLIENT_ID`/`OCM_CLIENT_SECRET`, or `/var/run/ocm-token/token` (optional; graceful fallback)
 
 **API Resources and CRD:**
 - Prow GCS artifacts from live HCP, Classic, and OSD GCP cluster snapshots
@@ -130,6 +135,10 @@ fi
 **Critical Alerts:**
 - Prow GCS artifacts from live HCP, Classic, and OSD GCP PrometheusRule snapshots
 - Flattened PrometheusRule alerting rules (HCP, Classic, and OSD GCP; OSD GCP skipped for 5.x)
+
+**Cluster Install, Target E2E, Upgrade E2E (checks 11–13):**
+- Prow GCS: ClusterOperator/node snapshots, `junit-rosa-e2e.xml`, Y-1 upgrade periodics
+- Consumed via `scripts/lib/prow_artifacts.py`; missing artifacts → SKIP (check 13 FAILs only on failed post-upgrade e2e or unhealthy COs)
 
 ## Implementation Details
 

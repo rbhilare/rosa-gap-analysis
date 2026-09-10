@@ -54,7 +54,7 @@ Changes that affect **multiple areas** or **external interfaces**:
 4. Update generate-combined-report.py
 5. Create skills/network-gap/SKILL.md
 6. Update docs/validation-checks.md
-7. Update README.md (check count table)
+7. Update README.md (check count table — currently 13)
 8. Update CLAUDE.md (validation table)
 
 ### Subagents That Could Help:
@@ -154,8 +154,8 @@ This is a high-impact change affecting multiple areas.
 ### Files to Update:
 1. scripts/gap-all.sh (add execution step)
 2. scripts/generate-combined-report.py (add to aggregation)
-3. docs/validation-checks.md (add check #7)
-4. README.md (update check count)
+3. docs/validation-checks.md (add check #14)
+4. README.md (update check count — 13 → 14)
 5. CLAUDE.md (update validation table)
 
 ### Subagents:

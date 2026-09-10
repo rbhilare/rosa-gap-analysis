@@ -30,7 +30,7 @@ Validate and compare OCM (OpenShift Cluster Manager) version gate configurations
    - Check if the `ocm` binary is in the `PATH`
    - Read offline OCM token from environment variable `OCM_TOKEN` or `/var/run/ocm-token/token`
    - Perform OCM authentication and query `/api/clusters_mgmt/v1/version_gates`
-3. Fall back gracefully to mock version gates if OCM credentials or CLI are absent (always exit 0 for validation checks)
+3. Fall back gracefully to mock version gates if OCM credentials or CLI are absent (exit 0 with WARN; exit 1 only when live validation FAILs)
 4. Compare gate definitions between baseline (Y-1) and target (Y)
 5. Perform configuration validation checks:
    - Ensure the target version has at least one configured gate

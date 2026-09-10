@@ -4,7 +4,7 @@ description: >
   Comprehensive gap analysis between OpenShift versions covering AWS STS policies,
   GCP WIF policies, feature gates, and OCP admin gate acknowledgments. Use when
   performing complete version upgrade assessment for managed OpenShift (OSD, ROSA).
-  Exits 1 if any validation check (CHECK #1-7 or #12) fails; exits 0 if all checks pass. CHECK #8 (Feature Gates), CHECK #9 (API Resources and CRD), CHECK #10 (Critical Alerts), and CHECK #11 (Cluster Install) are Info only.
+  Exits 1 if any validation check (CHECK #1-7 or #13) fails; exits 0 if all checks pass. CHECK #8 (Feature Gates), CHECK #9 (API Resources and CRD), CHECK #10 (Critical Alerts), CHECK #11 (Cluster Install), and CHECK #12 (Target E2E) are informational only.
 compatibility:
   required_tools:
     - oc
@@ -15,8 +15,8 @@ compatibility:
 
 # Full Gap Analysis
 
-Orchestrate comprehensive gap analysis across OpenShift versions.
-Automatically analyzes AWS STS policies, GCP WIF policies, feature gates, and OCP admin gate acknowledgments.
+Orchestrate comprehensive gap analysis across OpenShift versions (all 13 checks).
+Analyzes AWS STS, GCP WIF, OCP admin gates, versions/channels, OCM version gates, Prow snapshots, E2E JUnit, and feature gates (last).
 
 ## When to Use
 
@@ -42,31 +42,35 @@ Automatically analyzes all of:
    - GCP IAM role/permission changes
    - Service account bindings
 
-3. **Feature Gates**
-   - New feature gates added
-   - Feature gates removed
-   - Gates newly enabled by default
-   - Gates removed from default
-
-4. **OCP Admin Gate Acknowledgments**
+3. **OCP Admin Gate Acknowledgments**
    - Admin gates requiring acknowledgment
    - Missing acknowledgment files
    - Unacknowledged gates that would block upgrades
    - Upgrade readiness validation
 
-5. **Live ROSA cluster snapshots (informational)**
+4. **Versions & Channels (Check #6)**
+   - OCM channel availability (candidate/fast/stable/eus)
+   - Marketplace enablement (ROSA Classic, ROSA HCP, OSD GCP)
+
+5. **OCM Version Gates (Check #7)**
+   - Gate existence, metadata, and configuration vs baseline
+
+6. **Live ROSA cluster snapshots (informational)**
    - API Resources and CRD Diff Validation (Check #9)
    - Critical Alerts Diff Validation (Check #10)
    - Cluster Install and Delete Validation (Check #11)
 
-6. **Target E2E Validation and alert monitoring (Check #12, informational)**
+7. **Target E2E Validation and alert monitoring (Check #12, informational)**
    - Target-version rosa-e2e JUnit (failed tests are reported; they do not fail the job)
    - Alert monitoring SKIP until VerifyNoCriticalAlerts exists in rosa-e2e
 
-7. **Upgrade Validation from Y-1 to Y with E2E Tests (Check #13)**
+8. **Upgrade Validation from Y-1 to Y with E2E Tests (Check #13)**
    - Post-upgrade JUnit from rosa-e2e HCP, Classic, and OSD GCP Y-1 upgrade periodics
    - Post-upgrade ClusterOperator health from JSON or oc-get txt dumps
    - Duration from upgrade-metrics.json or finished.json; pre-upgrade COs when published
+
+9. **Feature Gates (Check #8, informational — always executed last)**
+   - New/removed gates and default enablement changes from Sippy API
 
 The script runs all analyses and reports if differences exist in any area.
 
@@ -79,11 +83,11 @@ Understand the comparison being requested:
 - Target version (default: auto-detect latest candidate)
 - Specific focus areas (if any)
 
-The analysis automatically covers both AWS STS and GCP WIF platforms.
+The analysis covers policy validation, channel/marketplace checks, Prow artifact diffs, and E2E upgrade validation.
 
 ### Step 2: Use the Orchestrator Script
 
-The `scripts/gap-all.sh` script runs credential policy analysis for both AWS and GCP:
+The `scripts/gap-all.sh` script runs all 13 checks (feature gates last):
 
 **Auto-detect versions:**
 ```bash
@@ -134,7 +138,7 @@ The script:
 - Generates JSON reports for each analysis (used for combined report)
 - Generates combined report aggregating all analyses (HTML, JSON)
 - Logs detected differences to stdout/stderr
-- Exits 1 if any validation check (CHECK #1-7, #12, or #13) fails
+- Exits 1 if any validation check (CHECK #1-7 or #13) fails
 - Exits 0 only when all validation checks pass
 - Also exits 1 on execution failures (missing tools, network errors, etc.)
 
@@ -255,7 +259,7 @@ Analyzes all of:
 - Feature gate changes
 - OCP admin gate acknowledgments
 
-Exits 1 if any validation check (CHECK #1-7) fails; exits 0 if all checks pass. CHECK #8 (Feature Gates) is Info only.
+Exits 1 if any validation check (CHECK #1-7 or #13) fails; exits 0 if all checks pass. CHECK #8–#12 are informational only.
 
 ## Enhanced Analysis
 
@@ -350,7 +354,7 @@ Exit code: `0` - All validation checks PASSED
 [INFO] Feature Gates: Differences detected
 [INFO] Differences detected - review recommended
 ```
-Exit code: `0` (validation PASSED) or `1` (validation FAILED - CHECK #1-7)
+Exit code: `0` (validation PASSED) or `1` (validation FAILED - CHECK #1-7 or #13)
 
 **Next steps when changes detected:**
 1. Run individual platform scripts to get detailed information

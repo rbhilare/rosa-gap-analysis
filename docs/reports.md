@@ -338,7 +338,13 @@ Written by `scripts/lib/reporters.py`:
 | 6 | `gap-versions-channels.py` | `status-check-6.json` |
 | 7 | `gap-ocm-version-gate.py` | `status-check-7.json` |
 | 8 | `gap-feature-gates.py` | `status-check-8.json` |
-| 9–13 | `gap-api-resources.py`, etc. | `status-check-<n>.json` |
+| 9 | `gap-api-resources.py` | `status-check-9.json` |
+| 10 | `gap-critical-alerts.py` | `status-check-10.json` |
+| 11 | `gap-cluster-install.py` | `status-check-11.json` |
+| 12 | `gap-e2e-validation.py` | `status-check-12.json` |
+| 13 | `gap-upgrade-e2e.py` | `status-check-13.json` |
+
+**Note:** Checks #1–#2 and #3–#4 share `status-check-1.json` and `status-check-2.json` respectively (one status file per script, not per global check number).
 
 ### Combined report fallbacks
 

@@ -44,6 +44,8 @@ The `ci/prow-autofix.sh` script provides complete end-to-end automation:
 8. **Create PR** - Template-based description with job URLs, HTML report links, permission changes (closes existing PR if present)
 9. **Cleanup** - Automatic temporary directory cleanup after success
 
+**Note:** Autofix covers CHECK #1–#5 only (managed-cluster-config policy/ack gaps). Checks #6–#13 are not auto-fixed. Scheduled chai-bot runs the same flow for nightly periodic failures (one MCC PR per failing OCP minor).
+
 ## Workflow
 
 This skill combines `analyze-prow-failure` + `fix-prow-failure` into one command.

@@ -353,19 +353,23 @@ User can choose:
 # Test gap-all.sh orchestrator
 ./scripts/gap-all.sh --baseline 4.21 --target 4.22
 
-# Test individual scripts
-python3 ./scripts/gap-aws-sts.py --baseline 4.21 --target 4.22
-python3 ./scripts/gap-gcp-wif.py --baseline 4.21 --target 4.22
-python3 ./scripts/gap-ocp-gate-ack.py --baseline 4.21 --target 4.22
-python3 ./scripts/gap-feature-gates.py --baseline 4.21 --target 4.22
+# Test individual scripts (all gap-*.py in gap-all.sh)
+for s in gap-aws-sts gap-gcp-wif gap-ocp-gate-ack gap-versions-channels gap-ocm-version-gate \
+  gap-api-resources gap-critical-alerts gap-cluster-install gap-e2e-validation gap-upgrade-e2e gap-feature-gates; do
+  python3 "./scripts/${s}.py" --baseline 4.21 --target 4.22
+done
+
+# Unit tests
+make test
 
 # Verify reports generated
-ls -lh reports/gap-analysis-*
+ls -lh reports/gap-analysis-* reports/status-check-*.json
 ```
 
 **Success criteria:**
-- ✅ All scripts exit 0 (successful execution)
-- ✅ Reports generated in MD, HTML, JSON formats
+- ✅ All scripts exit 0 (successful execution; informational checks may show FAIL in report)
+- ✅ Reports generated (HTML/JSON when run standalone; JSON + combined HTML via gap-all.sh)
+- ✅ `make test` passes
 - ✅ No Python/Bash errors
 
 Save baseline report checksums for comparison:
@@ -399,11 +403,8 @@ rm -rf reports/
 # Verify exit code
 echo "Exit code: $?"  # Should be 0
 
-# Re-run individual scripts
-python3 ./scripts/gap-aws-sts.py --baseline 4.21 --target 4.22
-python3 ./scripts/gap-gcp-wif.py --baseline 4.21 --target 4.22
-python3 ./scripts/gap-ocp-gate-ack.py --baseline 4.21 --target 4.22
-python3 ./scripts/gap-feature-gates.py --baseline 4.21 --target 4.22
+# Re-run individual scripts (same loop as baseline)
+make test
 
 # Verify reports still generated
 ls -lh reports/gap-analysis-*
@@ -415,7 +416,7 @@ diff /tmp/baseline-reports.md5 /tmp/after-cleanup-reports.md5
 
 **Success criteria:**
 - ✅ All scripts exit 0 (no regressions)
-- ✅ Same reports generated (MD, HTML, JSON)
+- ✅ Same reports generated (HTML/JSON)
 - ✅ JSON report structure unchanged (checksums may differ due to timestamps, but structure identical)
 - ✅ No new errors or warnings
 
@@ -493,10 +494,8 @@ Files modified:
 
 Testing results:
   ✅ gap-all.sh: Exit 0 (baseline: 0, after: 0)
-  ✅ gap-aws-sts.py: Exit 0, reports generated
-  ✅ gap-gcp-wif.py: Exit 0, reports generated
-  ✅ gap-ocp-gate-ack.py: Exit 0, reports generated
-  ✅ gap-feature-gates.py: Exit 0, reports generated
+  ✅ All 11 gap-*.py scripts: Exit 0, reports generated
+  ✅ make test: pass
   ✅ JSON report structure: Identical (validation preserved)
 
 Next steps:
@@ -529,11 +528,19 @@ After applying cleanups, I MUST:
 
 | Script | Test Command | Success Criteria |
 |--------|--------------|------------------|
-| gap-all.sh | `./scripts/gap-all.sh --baseline 4.21 --target 4.22` | Exit 0, combined report generated |
-| gap-aws-sts.py | `python3 ./scripts/gap-aws-sts.py --baseline 4.21 --target 4.22` | Exit 0, 3 reports (MD/HTML/JSON) |
-| gap-gcp-wif.py | `python3 ./scripts/gap-gcp-wif.py --baseline 4.21 --target 4.22` | Exit 0, 3 reports (MD/HTML/JSON) |
-| gap-ocp-gate-ack.py | `python3 ./scripts/gap-ocp-gate-ack.py --baseline 4.21 --target 4.22` | Exit 0, 3 reports (MD/HTML/JSON) |
-| gap-feature-gates.py | `python3 ./scripts/gap-feature-gates.py --baseline 4.21 --target 4.22` | Exit 0, 3 reports (MD/HTML/JSON) |
+| gap-all.sh | `./scripts/gap-all.sh --baseline 4.21 --target 4.22` | Exit 0 unless checks #1–#7 or #13 fail |
+| gap-aws-sts.py | `python3 ./scripts/gap-aws-sts.py --baseline 4.21 --target 4.22` | Exit 0, HTML + JSON |
+| gap-gcp-wif.py | `python3 ./scripts/gap-gcp-wif.py --baseline 4.21 --target 4.22` | Exit 0, HTML + JSON |
+| gap-ocp-gate-ack.py | `python3 ./scripts/gap-ocp-gate-ack.py --baseline 4.21 --target 4.22` | Exit 0, HTML + JSON |
+| gap-versions-channels.py | `python3 ./scripts/gap-versions-channels.py --version 4.22` | Exit 0, HTML + JSON |
+| gap-ocm-version-gate.py | `python3 ./scripts/gap-ocm-version-gate.py --version 4.22` | Exit 0, HTML + JSON |
+| gap-api-resources.py | `python3 ./scripts/gap-api-resources.py --version 4.22` | Exit 0 (informational), HTML + JSON |
+| gap-critical-alerts.py | `python3 ./scripts/gap-critical-alerts.py --version 4.22` | Exit 0 (informational), HTML + JSON |
+| gap-cluster-install.py | `python3 ./scripts/gap-cluster-install.py --version 4.22` | Exit 0 (informational), HTML + JSON |
+| gap-e2e-validation.py | `python3 ./scripts/gap-e2e-validation.py --version 4.22` | Exit 0 even if e2e FAIL in report |
+| gap-upgrade-e2e.py | `python3 ./scripts/gap-upgrade-e2e.py --version 4.22` | Exit 0 on SKIP; exit 1 on upgrade FAIL |
+| gap-feature-gates.py | `python3 ./scripts/gap-feature-gates.py --baseline 4.21 --target 4.22` | Exit 0 (informational), HTML + JSON |
+| make test | `make test` | All pytest tests pass |
 
 ### Report Validation
 
@@ -588,7 +595,7 @@ Before consolidating:
 Before AND after applying cleanups:
 ✓ **Run gap-all.sh**: Verify orchestrator still works (exit 0)
 ✓ **Run all gap-*.py scripts**: Verify individual scripts work (exit 0)
-✓ **Check reports**: Verify MD/HTML/JSON reports generated
+✓ **Check reports**: Verify HTML/JSON and status-check-*.json generated
 ✓ **Validate JSON structure**: Compare baseline vs after cleanup
 ✓ **Rollback if tests fail**: Never commit broken changes
 

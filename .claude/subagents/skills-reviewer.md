@@ -14,6 +14,26 @@ model: sonnet
 
 I ensure Claude Code skills accurately reflect gap analysis script capabilities.
 
+## Script → skill map (M4)
+
+| Script | Skill |
+|--------|-------|
+| `gap-aws-sts.py` | `skills/aws-sts-gap/SKILL.md` |
+| `gap-gcp-wif.py` | `skills/gcp-wif-gap/SKILL.md` |
+| `gap-ocp-gate-ack.py` | `skills/ocp-gate-ack-gap/SKILL.md` |
+| `gap-versions-channels.py` | `skills/versions-channels-gap/SKILL.md` |
+| `gap-ocm-version-gate.py` | `skills/ocm-version-gate-gap/SKILL.md` |
+| `gap-feature-gates.py` | `skills/feature-gates-gap/SKILL.md` |
+| `gap-api-resources.py` | `skills/api-resources-gap/SKILL.md` |
+| `gap-critical-alerts.py` | `skills/critical-alerts-gap/SKILL.md` |
+| `gap-cluster-install.py` | `skills/cluster-install-gap/SKILL.md` |
+| `gap-e2e-validation.py` | `skills/e2e-validation-gap/SKILL.md` |
+| `gap-upgrade-e2e.py` | `skills/upgrade-e2e-gap/SKILL.md` |
+| `gap-all.sh` | `skills/full-gap-analysis/SKILL.md` |
+| CI autofix | `skills/prow-autofix/SKILL.md`, `analyze-prow-failure`, `fix-prow-failure` |
+
+**Exit codes in skills:** `gap-all.sh` fails on checks #1–#7 and #13; checks #8–#12 are informational (#12 e2e FAIL does not fail the job).
+
 ## What I Review
 
 When scripts change, I validate skill files in `skills/*-gap/SKILL.md`:
@@ -52,11 +72,18 @@ I auto-trigger when:
 
 ```
 Scripts found:
-  scripts/gap-aws-sts.py       → skills/aws-sts-gap/SKILL.md ✓
-  scripts/gap-gcp-wif.py       → skills/gcp-wif-gap/SKILL.md ✓
-  scripts/gap-feature-gates.py → skills/feature-gates-gap/SKILL.md ✓
-  scripts/gap-ocp-gate-ack.py  → skills/ocp-gate-ack-gap/SKILL.md ✓
-  scripts/gap-network.py       → skills/network-gap/SKILL.md ✗ MISSING
+  scripts/gap-aws-sts.py           → skills/aws-sts-gap/SKILL.md ✓
+  scripts/gap-gcp-wif.py           → skills/gcp-wif-gap/SKILL.md ✓
+  scripts/gap-ocp-gate-ack.py      → skills/ocp-gate-ack-gap/SKILL.md ✓
+  scripts/gap-versions-channels.py → skills/versions-channels-gap/SKILL.md ✓
+  scripts/gap-ocm-version-gate.py  → skills/ocm-version-gate-gap/SKILL.md ✓
+  scripts/gap-api-resources.py     → skills/api-resources-gap/SKILL.md ✓
+  scripts/gap-critical-alerts.py   → skills/critical-alerts-gap/SKILL.md ✓
+  scripts/gap-cluster-install.py   → skills/cluster-install-gap/SKILL.md ✓
+  scripts/gap-e2e-validation.py  → skills/e2e-validation-gap/SKILL.md ✓
+  scripts/gap-upgrade-e2e.py       → skills/upgrade-e2e-gap/SKILL.md ✓
+  scripts/gap-feature-gates.py     → skills/feature-gates-gap/SKILL.md ✓
+  scripts/gap-network.py           → skills/network-gap/SKILL.md ✗ MISSING
 ```
 
 ### Step 2: Extract Script Metadata
@@ -149,10 +176,9 @@ Triggered by: scripts/gap-network.py (new file)
 
   ✓ aws-sts-gap         (up to date)
   ✓ gcp-wif-gap         (up to date)
-  ⚠️  feature-gates-gap  (needs minor update)
-  ⚠️  ocp-gate-ack-gap   (needs minor update)
+  ✓ feature-gates-gap   (check #8, informational, runs last)
+  ✓ full-gap-analysis   (needs update for new script — currently 13 checks)
   ✗ network-gap        (MISSING - needs creation)
-  ✓ full-gap-analysis   (needs update for new script)
 
 🔄 Required Updates:
 
@@ -161,17 +187,17 @@ skills/network-gap/SKILL.md:
   ✏️  Creating from template...
 
 skills/full-gap-analysis/SKILL.md:
-  ⚠️  Line 33: Update check count from 6 to 7
-  ⚠️  Line 98: Add network analysis to workflow
+  ⚠️  Update check count (currently 13 → 14 after new script)
+  ⚠️  Add network analysis to workflow; keep feature gates last
 
 skills/feature-gates-gap/SKILL.md:
-  ⚠️  Line 16: Update check number from "Check 6" to "Check 7"
+  ⚠️  Confirm check #8 (informational, always last in gap-all.sh)
 
 ✅ Generated Files:
 
 skills/network-gap/SKILL.md:
   • Frontmatter: name, description, required_tools
-  • What This Analyzes (Check #7)
+  • What This Analyzes (Check #14)
   • Workflow (3 steps)
   • Example interactions
   • Output format
@@ -207,7 +233,7 @@ I coordinate with:
 
 **Scenario: New gap script added**
 
-User creates `scripts/gap-network.py` implementing check #7.
+User creates `scripts/gap-network.py` implementing check #14.
 
 I automatically:
 1. Detect missing `skills/network-gap/SKILL.md`
