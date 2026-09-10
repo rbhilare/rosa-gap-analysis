@@ -101,20 +101,26 @@ def check_aws_marketplace_enablement(target_version):
             "rosa_hcp_output": sorted(rosa_hcp)[-1] if rosa_hcp else "",
         }
 
-        if in_cincinnati and in_rosa_classic:
-            log_info(f"  {chan}: Cincinnati has {len(cincinnati_versions)} version(s), ROSA enabled")
-        elif in_cincinnati and not in_rosa_classic:
+        in_rosa = in_rosa_classic or in_rosa_hcp
+        if in_cincinnati and in_rosa:
+            if in_rosa_classic:
+                log_info(f"  {chan}: Cincinnati has {len(cincinnati_versions)} version(s), ROSA enabled")
+            else:
+                log_info(f"  {chan}: Cincinnati has {len(cincinnati_versions)} version(s), ROSA HCP enabled")
+        elif in_cincinnati:
             log_warning(f"  {chan}: Cincinnati has {len(cincinnati_versions)} version(s), but ROSA clusterimagesets NOT enabled")
-        elif not in_cincinnati and not in_rosa_classic:
+        elif not in_rosa:
             log_info(f"  {chan}: not published yet")
 
     enabled_channels = [
         chan for chan in channels
         if cli_results[chan]["rosa_classic"] or cli_results[chan]["rosa_hcp"]
     ]
+    # HCP-only (e.g. OpenShift 5.x) is sufficient; Classic is not required.
     gaps = [
         chan for chan in ga_channels
-        if cli_results[chan]["cincinnati"] and not cli_results[chan]["rosa_classic"]
+        if cli_results[chan]["cincinnati"]
+        and not (cli_results[chan]["rosa_classic"] or cli_results[chan]["rosa_hcp"])
     ]
 
     if gaps:
